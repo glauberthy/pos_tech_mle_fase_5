@@ -1,0 +1,8 @@
+{
+  "last_file_name": "BASE DE DADOS PEDE 2024 - DATATHON.xlsx",
+  "last_file_sha256": "0535009c55626fcd14c6706221b3f68ac527b37a9a8f77c6198ab4b8715fce8a",
+  "last_trained_at_utc": "2026-02-23T22:26:35.500611+00:00",
+  "auc": 0.7648,
+  "n_students_valid": 765,
+  "source": "train.py"
+}

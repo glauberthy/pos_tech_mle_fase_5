@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-02-23T17:33:19.083309",
+  "storage": "/home/glauberthy/Desktop/datathon/notebooks/data",
+  "train_pairs": [
+    "2022->2023"
+  ],
+  "valid_pairs": [
+    "2023->2024"
+  ],
+  "target_definition": "target = 1 if defasagem_t1 > defasagem_t else 0",
+  "dropped_columns": [
+    "ra",
+    "pair_label",
+    "fase_raw",
+    "escola",
+    "ipp"
+  ],
+  "n_train": 600,
+  "n_valid": 765,
+  "n_features": 121
+}
