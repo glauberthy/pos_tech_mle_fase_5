@@ -1,4 +1,7 @@
-.PHONY: test test-v test-cov test-cov-html lint format install clean pipeline
+.PHONY: test test-v test-cov test-cov-html lint format install clean pipeline \
+        docker-build-api docker-build-dashboard docker-build-all \
+        docker-run-api docker-run-dashboard \
+        compose-up compose-up-d compose-down compose-logs
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -46,3 +49,33 @@ MODEL_DIR ?= models
 
 pipeline:
 	$(PYTHON) -m src.train --xls "$(XLS)" --model-dir "$(MODEL_DIR)"
+
+# ── Docker / HF Spaces ────────────────────────────────────────────────────────
+
+docker-build-api:
+	docker build -f Dockerfile.api -t pm-api:latest .
+
+docker-build-dashboard:
+	docker build -f Dockerfile.dashboard -t pm-dashboard:latest .
+
+docker-build-all: docker-build-api docker-build-dashboard
+
+docker-run-api:
+	docker run --rm -p 7860:7860 pm-api:latest
+
+docker-run-dashboard:
+	docker run --rm -p 7861:7860 pm-dashboard:latest
+
+# ── Docker Compose (ambos os serviços juntos) ─────────────────────────────────
+
+compose-up:
+	docker compose up --build
+
+compose-up-d:
+	docker compose up --build -d
+
+compose-down:
+	docker compose down
+
+compose-logs:
+	docker compose logs -f
