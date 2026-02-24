@@ -1,4 +1,1 @@
-{
-  "tests/test_preprocessing.py::TestBuildPair::test_excludes_already_defasado": true,
-  "tests/test_preprocessing.py::TestBuildPair::test_target_assignment": true
-}
+{}
