@@ -1,0 +1,51 @@
+services:
+
+  # ── Space 1: FastAPI ─────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: pm-api:latest
+    container_name: pm-api
+    ports:
+      - "8000:7860"          # localhost:8000 → container:7860
+    volumes:
+      # volume compartilhado: retreino no dashboard atualiza o modelo da API
+      - models_data:/app/models
+    environment:
+      PYTHONPATH: /app
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # ── Space 2: Dash Dashboard ───────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: pm-dashboard:latest
+    container_name: pm-dashboard
+    ports:
+      - "8501:7860"          # localhost:8501 → container:7860
+    volumes:
+      # mesmo volume: lê modelos atualizados pelo retreino
+      - models_data:/app/models
+      # pasta data persistida (uploads de planilha PEDE)
+      - ./data:/app/data
+    environment:
+      PYTHONPATH: /app
+      # URL interna do compose – dashboard acessa a API pelo nome do serviço
+      API_BASE_URL: "http://api:7860"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  models_data:
+    driver: local
