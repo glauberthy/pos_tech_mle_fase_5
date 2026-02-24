@@ -1,1 +1,50 @@
+# Byte-compiled / Optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes Virtuais
 .venv/
+venv/
+env/
+
+# Dados (Não comitar dados brutos ou processados)
+data/
+*.csv
+*.parquet
+*.xlsx
+
+# Modelos (Binários pesados)
+models/
+*.keras
+*.h5
+*.pkl
+*.joblib
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# IDEs e Editores
+.vscode/
+.idea/
+*.swp
+
+# Logs e Databases locais
+*.log
+*.sqlite3
+
+# OS
+.DS_Store
+
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# logs
+*.log
+
+# artifacts (se não quiser versionar o binário do modelo no git)
+models/*.joblib
+models/*.pkl
