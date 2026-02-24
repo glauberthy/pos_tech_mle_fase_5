@@ -1,0 +1,24 @@
+# ── Ambientes virtuais e cache ────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# ── Notebooks e artefatos de desenvolvimento ─────────────────────────────────
+notebooks/
+docs/
+tools/
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Dados brutos (não entram na imagem – volume ou HF Dataset) ────────────────
+data/
+
+# ── Outros Dockerfiles (não copiar para dentro da imagem) ────────────────────
+Dockerfile*

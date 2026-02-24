@@ -1,0 +1,21 @@
+# ── API Space – dependências mínimas ─────────────────────────────────────────
+# Inferência e serving
+fastapi==0.131.0
+uvicorn[standard]==0.41.0
+pydantic==2.12.5
+starlette==0.52.1
+
+# Modelo & features
+catboost==1.2.10
+scikit-learn==1.8.0
+shap==0.50.0
+joblib==1.5.3
+
+# Dados
+pandas==2.3.3
+numpy==2.4.2
+pyarrow==23.0.1
+
+# Utilitários
+python-dotenv==1.2.1
+requests==2.32.5
