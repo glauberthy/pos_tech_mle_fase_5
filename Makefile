@@ -4,11 +4,6 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-# ── Instalação ────────────────────────────────────────────────────────────────
-
-install:
-	$(PYTHON) -m pip install -e .
-
 # ── Testes ────────────────────────────────────────────────────────────────────
 
 test:
