@@ -245,29 +245,7 @@ Acesse:
 
 ---
 
-### 2. Ambiente Local (Windows / PowerShell)
-
-```powershell
-# 1. Crie e ative o ambiente virtual
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# 2. Instale as dependências
-pip install -r requirements.txt
-
-# 3. Treine o modelo
-.\.venv\Scripts\python -m src.train --xls "data\BASE DE DADOS PEDE 2024 - DATATHON.xlsx" --model-dir models
-
-# 4. Inicie a API
-uvicorn api.main:app --host 0.0.0.0 --port 8000
-
-# 5. (Opcional) Dashboard
-.\.venv\Scripts\python dashboard\dashapp.py --host 0.0.0.0 --port 8502
-```
-
----
-
-### 3. Docker
+### 2. Docker
 
 ```bash
 # Build da imagem
@@ -283,7 +261,7 @@ O container treina o modelo automaticamente e em seguida sobe a API na porta `80
 
 ---
 
-### 4. Makefile (atalhos úteis)
+### 3. Makefile (atalhos úteis)
 
 ```bash
 make pipeline          # Executa o treinamento completo
@@ -688,26 +666,12 @@ O parâmetro `limit` aceita valores de `1` a `1000` (padrão: `100`).
 
 ## Dashboard
 
-```powershell
-.\start-dashboard.ps1
-```
+```bash
+# Iniciar o dashboard
+python dashboard/dashapp.py --host 0.0.0.0 --port 8502
 
-API no PowerShell:
-
-```powershell
-.\start-api.ps1
-```
-
-API + dashboard no PowerShell:
-
-```powershell
-.\start-all.ps1
-```
-
-Porta alternativa:
-
-```powershell
-.\start-dashboard.ps1 -Port 8503
+# Porta alternativa
+python dashboard/dashapp.py --host 0.0.0.0 --port 8503
 ```
 
 Features:
