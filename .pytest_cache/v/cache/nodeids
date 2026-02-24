@@ -1,4 +1,7 @@
 [
+  "tests/test_api.py::test_alert_endpoint_no_file",
+  "tests/test_api.py::test_health_endpoint",
+  "tests/test_api.py::test_predict_empty_body",
   "tests/test_evaluation.py::TestEvaluate::test_evaluate_returns_auc",
   "tests/test_evaluation.py::TestEvaluate::test_evaluate_topk_metrics_present",
   "tests/test_evaluation.py::TestEvaluate::test_per_fase_breakdown",
