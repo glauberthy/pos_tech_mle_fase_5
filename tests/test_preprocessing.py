@@ -199,6 +199,138 @@ class TestNormalizeFaseNumeric:
 
 
 # ---------------------------------------------------------------------------
+# additional helpers
+# ---------------------------------------------------------------------------
+
+class TestAdditionalHelpers:
+    def test_normalizar_nome_colunas(self):
+        from src.preprocessing import normalizar_nome_colunas
+        assert normalizar_nome_colunas("Nome Aluno") == "nome_aluno"
+
+    def test_apply_canonical_renames(self):
+        from src.preprocessing import apply_canonical_renames
+        df = pd.DataFrame({"matem": [1], "portug": [2], "unknown": [3]})
+        out = apply_canonical_renames(df)
+        assert "matem" in out.columns
+        assert "portug" in out.columns
+        assert "unknown" in out.columns
+
+    def test_coerce_types_and_clean_basic(self):
+        from src.preprocessing import coerce_types_and_clean
+        df = pd.DataFrame({"ra": [" R1 "], "ano_base": [2022], "fase_raw": ["ALFA"],
+                           "turma": [" A "], "defasagem": ["1"], "matem": ["8"],
+                           "genero": ["M"]})
+        out = coerce_types_and_clean(df, year=2022)
+        assert out["ra"].iloc[0] == "R1"
+        # coerce_types_and_clean does not convert fase to Int64, it leaves object
+        assert out["fase"].dtype == object
+        # numeric columns may coerce to integer if no decimals
+        assert pd.api.types.is_numeric_dtype(out["matem"])
+
+    def test_standardize_year_combines(self):
+        from src.preprocessing import standardize_year
+        df = pd.DataFrame({"Matem": [9], "fase_raw": ["1"], "ra": ["R1"]})
+        out = standardize_year(df, year=2023)
+        assert "matem" in out.columns
+        assert out["ano_base"].iloc[0] == 2023
+
+    def test_first_series_with_dataframe(self):
+        from src.preprocessing import _first_series
+        # duplicate column names lead df[col] to return a DataFrame
+        df = pd.DataFrame([[1,2],[3,4]], columns=["x","x"])
+        s = _first_series(df, "x")
+        assert s.iloc[0] == 1
+
+    def test_ensure_inde_pedra_various(self):
+        from src.preprocessing import ensure_inde_pedra
+        df = pd.DataFrame({"ano_base": [2023], "inde_2023": [5], "pedra_23": ["quartzo"]})
+        out = ensure_inde_pedra(df)
+        assert out["inde"].iloc[0] == 5
+        assert out["pedra"].iloc[0] == "quartzo"
+        # missing ano_base
+        out2 = ensure_inde_pedra(pd.DataFrame())
+        assert pd.isna(out2["inde"]).all()
+
+    def test_drop_only_annual_inde_pedra(self):
+        from src.preprocessing import drop_only_annual_inde_pedra
+        df = pd.DataFrame({"inde_2021": [1], "pedra_21": ["x"], "keep": [2]})
+        out = drop_only_annual_inde_pedra(df)
+        assert "inde_2021" not in out.columns
+        assert "pedra_21" not in out.columns
+        assert "keep" in out.columns
+
+    def test_normalize_text_fields(self):
+        from src.preprocessing import normalize_text_fields
+        df = pd.DataFrame({"genero": ["Menino"], "pedra": ["Ametista"], "fase": ["FASE2"]})
+        out = normalize_text_fields(df)
+        assert out["genero"].iloc[0] == "M"
+        assert out["pedra"].iloc[0] == "ametista"
+        assert out["fase"].iloc[0] == 2
+
+    def test_normalize_dtypes(self):
+        from src.preprocessing import normalize_dtypes
+        df = pd.DataFrame({"ra": [" R "], "ano_nasc": ["2000"],
+                           "idade": ["20"], "genero": ["M"], "turma": ["A"]})
+        out = normalize_dtypes(df)
+        assert out["ra"].iloc[0] == "R"
+        assert out["ano_nasc"].dtype.name == "Int64"
+        assert out["idade"].dtype.name == "Int64"
+        assert out["genero"].dtype.name == "category"
+        assert out["turma"].dtype.name == "category"
+
+    def test_load_all_years_insufficient_sheets(self, monkeypatch):
+        from src.preprocessing import load_all_years
+
+        class FakeXl:
+            sheet_names = ["PEDE2022"]
+            def parse(self, name):
+                return pd.DataFrame()
+
+        monkeypatch.setattr("pandas.ExcelFile", lambda path, engine=None: FakeXl())
+        with pytest.raises(ValueError):
+            load_all_years("dummy")
+
+    def test_load_all_years_success(self, monkeypatch):
+        from src.preprocessing import load_all_years
+
+        class FakeXl:
+            sheet_names = ["PEDE2020", "PEDE2021", "PEDE2022"]
+            def parse(self, name):
+                # return df with minimal required columns
+                return pd.DataFrame({"ra": ["R1"], "fase_raw": ["1"],
+                                     "turma": ["A"], "defasagem": [0],
+                                     "matem": [5], "portug": [6],
+                                     "ingles": [7], "ieg": [1], "iaa": [1],
+                                     "ips": [1], "ipp": [1],
+                                     "genero": ["M"], "instituicao": ["X"],
+                                     "escola": ["Y"], "ano_ingresso": [2020],
+                                     "ano_nasc": [2002], "idade": [18]}
+                                    )
+
+        monkeypatch.setattr("pandas.ExcelFile", lambda path, engine=None: FakeXl())
+        result = load_all_years("dummy")
+        assert set(result.keys()) == {2020, 2021, 2022}
+
+    def test_load_sheet_adds_missing_columns_and_calculates_age(self):
+        from src.preprocessing import _load_sheet
+        # build a fake ExcelFile-like object with parse method
+        class DummyXl:
+            def parse(self, name):
+                return pd.DataFrame({
+                    "RA": ["1"],
+                    "fase_raw": ["ALFA"],
+                    "turma": ["T"],
+                    "defasagem": [0],
+                    "ano_nasc": [2000],
+                    # missing 'idade' should be computed
+                })
+        df = _load_sheet(DummyXl(), "sheet", 2023)
+        assert "ano_base" in df.columns
+        assert "idade" in df.columns
+        assert df["idade"].iloc[0] == 23
+
+
+# ---------------------------------------------------------------------------
 # _normalize_gender
 # ---------------------------------------------------------------------------
 

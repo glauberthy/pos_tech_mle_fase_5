@@ -247,3 +247,89 @@ class TestScoreStudents:
             assert result["top3_values"].iloc[0] == []
         finally:
             inf_module._SHAP_AVAILABLE = original
+
+    def test_shap_available_populates_fields(self):
+        """If shap present, _add_shap_explanations should fill top3 lists."""
+        from src.inference import score_students
+        import src.inference as inf_module
+
+        fake_proba = np.array([0.2, 0.8])
+        mock_meta = {"num_features": ["x", "y"], "cat_features": []}
+        # create fake shap values: 2 examples, 2 features
+        fake_shap = np.array([[0.1, -0.3], [0.4, 0.2]])
+
+        class DummyExplainer:
+            def __init__(self, model):
+                pass
+
+            def shap_values(self, x):
+                return fake_shap
+
+        original = inf_module._SHAP_AVAILABLE
+        try:
+            inf_module._SHAP_AVAILABLE = True
+            # patch shap.TreeExplainer
+            monkey = patch("shap.TreeExplainer", DummyExplainer)
+            with monkey:
+                with patch("src.inference.load_model", return_value=(MagicMock(), mock_meta)):
+                    with patch("src.inference.predict_proba", return_value=fake_proba):
+                        df = self._make_fe_df(n=2)
+                        result = score_students(df, model_dir="models")
+            # check that lists are populated
+            assert result["top3_factors"].iloc[0] != []
+            assert result["top3_values"].iloc[0] != []
+        finally:
+            inf_module._SHAP_AVAILABLE = original
+
+    def test_add_shap_explanations_handles_exception(self):
+        """_add_shap_explanations should catch exceptions from explainer."""
+        from src.inference import score_students
+        import src.inference as inf_module
+
+        fake_proba = np.array([0.5])
+        mock_meta = {"num_features": ["a"], "cat_features": []}
+
+        class ExplainerExcept:
+            def __init__(self, model):
+                pass
+            def shap_values(self, x):
+                raise RuntimeError("boom")
+
+        original = inf_module._SHAP_AVAILABLE
+        try:
+            inf_module._SHAP_AVAILABLE = True
+            with patch("shap.TreeExplainer", ExplainerExcept):
+                with patch("src.inference.load_model", return_value=(MagicMock(), mock_meta)):
+                    with patch("src.inference.predict_proba", return_value=fake_proba):
+                        df = self._make_fe_df(n=1)
+                        result = score_students(df, model_dir="models")
+            # should not crash and top lists empty
+            assert result["top3_factors"].iloc[0] == []
+            assert result["top3_values"].iloc[0] == []
+        finally:
+            inf_module._SHAP_AVAILABLE = original
+
+    def test_shap_import_failure_sets_flag(self, monkeypatch):
+        # reload module without shap installed to hit ImportError branch
+        import sys, importlib
+        if "src.inference" in sys.modules:
+            del sys.modules["src.inference"]
+        # temporarily remove shap
+        orig_shap = sys.modules.pop("shap", None)
+        try:
+            # force import to raise ImportError by monkeypatching __import__
+            import builtins
+            real_import = builtins.__import__
+            def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+                if name == "shap":
+                    raise ImportError("no shap")
+                return real_import(name, globals, locals, fromlist, level)
+            builtins.__import__ = fake_import
+
+            import src.inference as inf_mod
+            importlib.reload(inf_mod)
+            assert inf_mod._SHAP_AVAILABLE is False
+        finally:
+            builtins.__import__ = real_import
+            if orig_shap is not None:
+                sys.modules["shap"] = orig_shap

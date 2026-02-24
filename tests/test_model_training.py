@@ -206,3 +206,91 @@ class TestPredictProba:
             result = predict_proba(mock_model, df, num_feats, cat_feats)
 
         np.testing.assert_allclose(result, expected)
+
+
+# ---------------------------------------------------------------------------
+# train() behaviour
+# ---------------------------------------------------------------------------
+
+class TestTrainFunction:
+    def test_train_writes_model_and_meta(self, tmp_path, monkeypatch):
+        # prepare minimal dataframes
+        train_df = _make_df(n=4)
+        valid_df = _make_df(n=2)
+        num_feats = ["matem"]
+        cat_feats = ["fase"]
+
+        # stub CatBoostClassifier to ensure fit/save_model called
+        class DummyModel:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self._best_score = 0.9
+                self._best_iter = 5
+
+            def fit(self, train_pool, eval_set=None, use_best_model=None):
+                # pretend training happened
+                pass
+
+            def get_best_score(self):
+                return self._best_score
+
+            def get_best_iteration(self):
+                return self._best_iter
+
+            def save_model(self, path):
+                Path(path).write_text("dummy")
+
+        monkeypatch.setattr("src.model_training._CATBOOST_AVAILABLE", True)
+        monkeypatch.setattr("src.model_training.CatBoostClassifier", DummyModel)
+        # also patch Pool to a simple constructor
+        monkeypatch.setattr("src.model_training.Pool", lambda *args, **kwargs: (args, kwargs))
+
+        model, train_pool, valid_pool = None, None, None
+        result = None
+        # call train
+        from src.model_training import train
+        model, train_pool, valid_pool = train(train_df, valid_df, num_feats, cat_feats, model_dir=tmp_path)
+
+        # check files exist
+        assert (tmp_path / "catboost_model.cbm").exists()
+        assert (tmp_path / "model_meta.json").exists()
+
+        meta = json.loads((tmp_path / "model_meta.json").read_text())
+        assert meta["num_features"] == num_feats
+        assert meta["cat_features"] == cat_feats
+
+    def test_train_requires_catboost(self, monkeypatch):
+        monkeypatch.setattr("src.model_training._CATBOOST_AVAILABLE", False)
+        from src.model_training import train
+        with pytest.raises(ImportError):
+            train(pd.DataFrame(), pd.DataFrame(), [], [])
+
+    def test_import_error_branch_sets_flag(self, monkeypatch, tmp_path):
+        # simulate catboost missing by temporarily removing from sys.modules
+        import importlib, sys
+        # unload module if already imported
+        if "src.model_training" in sys.modules:
+            del sys.modules["src.model_training"]
+        # also remove catboost if loaded
+        orig_cat = sys.modules.pop("catboost", None)
+        try:
+            # reload model_training in env without catboost
+            import src.model_training as mt
+            # force ImportError on catboost import
+            import builtins
+            real_import = builtins.__import__
+            def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+                if name == "catboost":
+                    raise ImportError("no catboost")
+                return real_import(name, globals, locals, fromlist, level)
+            builtins.__import__ = fake_import
+            try:
+                importlib.reload(mt)
+                assert mt._CATBOOST_AVAILABLE is False
+            finally:
+                builtins.__import__ = real_import
+        finally:
+            # restore catboost module if it existed
+            if orig_cat is not None:
+                sys.modules["catboost"] = orig_cat
+
