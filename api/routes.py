@@ -263,7 +263,10 @@ def get_alert(k_pct: float = Query(default=15.0, ge=5.0, le=50.0)):
         raise HTTPException(status_code=500, detail="Invalid scored CSV format")
 
     alerted = stratified_topk_alert(df, score_col="score", fase_col="fase", k_pct=k_pct)
-    alerted_only = alerted[alerted["alerta"]].sort_values(["fase", "score"], ascending=[True, False])
+    # boolean mask may be int dtype; convert to bool and use .loc to avoid
+    # pandas treating the array as column selector (which raises KeyError).
+    mask = alerted["alerta"].astype(bool)
+    alerted_only = alerted.loc[mask].sort_values(["fase", "score"], ascending=[True, False])
 
     return {
         "k_pct": k_pct,
