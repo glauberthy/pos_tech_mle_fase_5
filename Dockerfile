@@ -25,4 +25,4 @@ RUN mkdir -p data models
 EXPOSE 8000
 
 # Training first, then serve
-CMD ["sh", "-c", "python train.py && uvicorn api.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python -m src.train && uvicorn api.main:app --host 0.0.0.0 --port 8000"]

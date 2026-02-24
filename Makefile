@@ -50,4 +50,4 @@ XLS       ?= data/BASE DE DADOS PEDE 2024 - DATATHON.xlsx
 MODEL_DIR ?= models
 
 pipeline:
-	$(PYTHON) train.py --xls "$(XLS)" --model-dir "$(MODEL_DIR)"
+	$(PYTHON) -m src.train --xls "$(XLS)" --model-dir "$(MODEL_DIR)"
