@@ -15,7 +15,6 @@ Runs the full pipeline:
 
 import argparse
 import hashlib
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -148,7 +147,6 @@ def main():
     # 6. Evaluate on validation set
     # ------------------------------------------------------------------
     from src.model_training import predict_proba
-    from src.evaluation import evaluate, print_report
 
     proba_train = predict_proba(model, train_fe, num_features, cat_features)
     proba = predict_proba(model, valid_fe, num_features, cat_features)

@@ -12,7 +12,6 @@ Run:
     uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 """
 
-import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -24,8 +23,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # Lazy imports from src (available after pip install -e .)
-from src.feature_engineering import build_features, get_feature_columns
-from src.model_training import load_model, predict_proba
+from src.feature_engineering import build_features
+from src.model_training import load_model
 from src.inference import score_students, alert_list, explain_student
 from src.evaluation import stratified_topk_alert
 from src.utils import (
