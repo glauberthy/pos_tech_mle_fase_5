@@ -495,24 +495,64 @@ def render_page(pathname, tab, ano, fases, turmas, ra_query, topk, _refresh, fee
         )
 
     if tab == "monitoramento":
-        drift_df = pd.DataFrame(_safe_json(DRIFT_JSONL, [])) if DRIFT_JSONL.exists() else pd.DataFrame()
+        import os
+        import json
+        import urllib.request
+        
+        api_url = os.environ.get("API_BASE_URL", "").rstrip("/")
+        drift_events = []
+        log_text = "A aguardar eventos em tempo real da API..."
+        
+        # 1. Buscar dados dinâmicos da API
+        if api_url:
+            try:
+                # AJUSTE: Inclusão do header 'User-Agent' para evitar bloqueio do Hugging Face
+                req = urllib.request.Request(
+                    f"{api_url}/metrics/drift/history",
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    if response.status == 200:
+                        data = json.loads(response.read().decode())
+                        drift_events = data.get("events", [])
+            except Exception as e:
+                log_text = f"Erro ao conectar à API para buscar logs: {e}\n\nMostrando dados locais (fallback)."
+        
+        # 2. Fallback para os ficheiros locais caso a API falhe ou não tenha eventos
+        if not drift_events:
+            drift_events = _safe_json(DRIFT_JSONL, [])
+            log_text = _safe_tail_text(MONITORING_LOG)
+        else:
+            # Constrói um log em modo texto baseado nos eventos reais da API
+            log_text = "=== LOGS DE MONITORAMENTO EM TEMPO REAL (API) ===\n\n"
+            for ev in drift_events[-15:]:  # Mostra os últimos 15 eventos
+                dt = ev.get('timestamp_utc', 'N/A')
+                tipo = ev.get('event_type', 'N/A')
+                psi = ev.get('psi', 0.0)
+                sev = ev.get('severity', 'N/A')
+                n_alunos = ev.get('n_students', 0)
+                log_text += f"[{dt}] INFO | Evento: {tipo} | Alunos processados: {n_alunos} | PSI Global: {psi:.4f} | Status: {sev}\n"
+
+        drift_df = pd.DataFrame(drift_events)
         graph = html.Div("Sem histórico de drift.")
         drift_table_rows = []
+        
         if not drift_df.empty and {"timestamp_utc", "psi"}.issubset(drift_df.columns):
             drift_df["timestamp_utc"] = pd.to_datetime(drift_df["timestamp_utc"], errors="coerce")
             drift_plot_df = drift_df.dropna(subset=["timestamp_utc"]).copy()
             if not drift_plot_df.empty:
-                fig = px.line(drift_plot_df, x="timestamp_utc", y="psi", markers=True, title="Evolução do PSI")
-                fig.add_hline(y=0.10, line_dash="dot", line_color="orange")
-                fig.add_hline(y=0.25, line_dash="dot", line_color="red")
+                fig = px.line(drift_plot_df, x="timestamp_utc", y="psi", markers=True, title="Evolução do Population Stability Index (PSI)")
+                fig.add_hline(y=0.10, line_dash="dot", line_color="orange", annotation_text="Atenção (0.10)")
+                fig.add_hline(y=0.25, line_dash="dot", line_color="red", annotation_text="Crítico (0.25)")
                 graph = dcc.Graph(figure=fig)
+            
+            # Formatar para a tabela
             drift_table_rows = drift_df.tail(20).fillna("").to_dict("records")
 
-        log_text = _safe_tail_text(MONITORING_LOG)
         return html.Div(
             [
                 cards,
-                html.H4("Dashboard de Drift"),
+                html.H4("Dashboard de Data Drift (Comunicação com API)"),
                 graph,
                 dash_table.DataTable(
                     columns=[{"name": c, "id": c} for c in (drift_df.columns.tolist() if not drift_df.empty else ["status"])],
@@ -520,17 +560,18 @@ def render_page(pathname, tab, ano, fases, turmas, ra_query, topk, _refresh, fee
                     style_cell={"padding": "8px"},
                     page_size=10,
                 ),
-                html.H4("Logging de monitoramento (últimas linhas)"),
+                html.H4("Logging de Monitoramento"),
                 html.Pre(
                     log_text,
                     style={
                         "background": "#0f172a",
-                        "color": "#e2e8f0",
+                        "color": "#10b981", # Cor verde estilo terminal
                         "padding": "12px",
                         "borderRadius": "8px",
                         "whiteSpace": "pre-wrap",
                         "maxHeight": "320px",
                         "overflowY": "auto",
+                        "fontFamily": "monospace"
                     },
                 ),
             ]

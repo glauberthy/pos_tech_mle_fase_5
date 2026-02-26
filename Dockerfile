@@ -1,28 +1,62 @@
-FROM python:3.11-slim
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerfile.dashboard  –  Hugging Face Space: passos-magicos-dashboard
+# Multi-stage: compilação separada do runtime → imagem final enxuta
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Set working directory
-WORKDIR /app
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
 
-# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
 
-# Copy project files
-COPY . .
+COPY requirements-dashboard.txt .
+RUN pip install --no-cache-dir -r requirements-dashboard.txt
 
-# Create directories
-RUN mkdir -p data models
+# ── Purge de dependências transitivas pesadas desnecessárias ──────────────────
+# shap puxa numba/llvmlite (GPU) - TreeExplainer não precisa
+# pyarrow não é necessário (usamos CSV/Excel)
+# graphviz, IPython: opcionais do catboost/shap
+RUN pip uninstall -y \
+        numba llvmlite \
+        pyarrow \
+        matplotlib fonttools pillow \
+        graphviz \
+        ipython ipykernel jupyter_client jupyter_core \
+    2>/dev/null || true
 
-# Copy dataset (expected to be mounted or copied at runtime)
-# COPY "BASE DE DADOS PEDE 2024 - DATATHON.xlsx" .
+RUN pip uninstall -y pip setuptools wheel 2>/dev/null || true
 
-# Default: run training then start API
-EXPOSE 8000
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM python:3.11-slim
 
-# Training first, then serve
-CMD ["sh", "-c", "python -m src.train && uvicorn api.main:app --host 0.0.0.0 --port 8000"]
+WORKDIR /app
+
+COPY --from=builder /venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+# ── Código-fonte ──────────────────────────────────────────────────────────────
+COPY dashboard/ dashboard/
+COPY src/       src/
+
+# ── Modelo pré-treinado (baked-in na imagem) ──────────────────────────────────
+COPY models/ models/
+
+# ── Diretório de dados (uploads de retreino em runtime) ───────────────────────
+RUN mkdir -p data
+
+# ── Wrapper de retreino (chamado via subprocess pelo dashapp.py) ──────────────
+COPY train.py .
+
+ENV PYTHONPATH=/app
+
+# Defina em Settings → Variables do Space:
+#   API_BASE_URL = https://<user>-passos-magicos-api.hf.space
+ENV API_BASE_URL=""
+
+EXPOSE 7860
+
+CMD ["python", "dashboard/dashapp.py", "--host", "0.0.0.0", "--port", "7860"]

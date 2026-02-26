@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Dashboard Plotly/Dash para análise de risco escolar (PEDE)
+short_description: Dashboard para análise de risco escolar (PEDE)
 ---
 
 # Passos Mágicos – Dashboard de Risco Escolar

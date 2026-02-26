@@ -76,57 +76,88 @@ O coordenador escolhe `k_pct ∈ {10, 15, 20, 25}` conforme a capacidade de aten
 ```
 datathon/
 │
-├── src/                          # Pacote principal (lógica de negócio)
-│   ├── train.py                  # Script de treinamento (pipeline completo)
-│   ├── preprocessing.py          # Carregamento e padronização dos dados PEDE
-│   ├── feature_engineering.py    # Engenharia de features com anti-leakage
-│   ├── model_training.py         # CatBoost: treino, carga, predict_proba
-│   ├── evaluation.py             # AUC, Recall@TopK, Precision@TopK, Lift@TopK
-│   ├── inference.py              # Scoring em lote + SHAP top-3 fatores
-│   └── utils.py                  # Logging, I/O, monitoramento de drift (PSI)
-│
 ├── api/                          # Serviço REST (FastAPI)
-│   ├── main.py                   # Inicialização da aplicação e startup
-│   ├── routes.py                 # Handlers de todos os endpoints
-│   └── schemas.py                # Modelos Pydantic de request/response
+│   ├── main.py                   # Inicialização e startup da aplicação
+│   └── routes.py                 # Handlers de endpoints e monitoramento
 │
-├── dashboard/
-│   └── dashapp.py                # Dashboard Dash (visualização pedagógica)
+├── dashboard/                    # Interface visual do usuário
+│   └── dashapp.py                # Dashboard pedagógico (Plotly/Dash)
 │
-├── models/                       # Artefatos gerados pelo treinamento
-│   ├── model/
-│   │   ├── catboost_model.cbm    # Modelo serializado
-│   │   ├── lookup_tables.pkl     # Estatísticas de grupo para inferência
-│   │   ├── model_meta.json       # Metadados (features, best iteration)
-│   │   └── cohort_summary.json   # Resumo da amostragem
-│   ├── evaluation/
-│   │   ├── evaluation_results.json  # Métricas de validação
-│   │   ├── valid_scored.csv         # Scores do conjunto de validação
-│   │   └── scored_history.csv       # Histórico multi-ano para o dashboard
-│   └── monitoring/
-│       ├── drift_history.jsonl   # Log de eventos PSI (append-only)
-│       └── retrain_metadata.json # Metadados do último retreinamento
+├── src/                          # Core Modules (Lógica de Negócio e ML)
+|   ├── train.py                  # Lógica de orquestração do pipeline de ML
+│   ├── preprocessing.py          # Limpeza e padronização (Base PEDE)
+│   ├── feature_engineering.py    # Criação de features e cálculo de defasagem
+│   ├── model_training.py         # Treinamento do modelo CatBoost
+│   ├── inference.py              # Lógica de predição e explicações SHAP
+│   ├── evaluation.py             # Métricas (AUC, Recall@TopK)
+│   └── utils.py                  # Funções auxiliares e loggers
 │
-├── tests/                        # Testes unitários
-│   ├── test_preprocessing.py
-│   ├── test_feature_engineering.py
-│   ├── test_model_training.py
-│   ├── test_inference.py
-│   ├── test_evaluation.py
-│   ├── test_utils.py
-│   ├── test_train_script.py
-│   └── test_api.py
+├── models/                       # Artefatos do Modelo e Monitoramento
+│   ├── model/                    # Modelo serializado (.cbm) e metadados
+│   ├── evaluation/               # Relatórios de performance e scores gerados
+│   └── monitoring/               # Logs de Data Drift (PSI) e eventos
 │
-├── notebooks/                    # Material didático (Colab)
-├── data/                         # Dados de entrada e uploads temporários
-├── docs/                         # Documentação técnica complementar
-├── Dockerfile                    # Imagem de produção
-├── Makefile                      # Automação de tarefas
-├── requirements.txt              # Dependências Python
-└── pytest.ini                    # Configuração dos testes
+├── notebooks/                    # Prototipação, EDA e validação de hipóteses
+├── tests/                        # Suite de testes unitários (Pytest)
+├── tools/                        # Scripts auxiliares (ex: gerador sintético 2025)
+├── docs/                         # Documentação técnica do projeto
+│
+├── docker-compose.yml            # Orquestração dos serviços (API + Dashboard)
+├── Dockerfile.api                # Imagem otimizada (Multi-stage) da API
+├── Dockerfile.dashboard          # Imagem otimizada (Multi-stage) do Front-end
+├── Makefile                      # Automação de comandos úteis
+└── train.py                      # Entrypoint/Wrapper para execução do retreino
+```
+---
+## Decisões Técnicas e Racional de MLOps 
+> Esta seção detalha as escolhas feitas para atender aos requisitos de impacto social e robustez técnica do edital.
+
+### Definição do Target (Anti-Leakage)
+* **Escolha:** O risco é definido pela piora no índice de defasagem (`target = 1` se `defasagem_t1 > defasagem_t`).
+* **Racional:** Focamos na prevenção. Ao usar apenas dados do tempo `t` para prever um evento em `t1`, garantimos que o modelo não "preveja o passado".
+
+### Engenharia de Atributos Contextual
+* **Escolha:** Criação de scores padronizados por Turma e Fase (Z-Score).
+* **Racional:** Um aluno com nota 7 em uma turma onde a média é 9 tem um perfil de risco diferente de um aluno com nota 7 em uma turma onde a média é 5.
+
+### Monitoramento de Data Drift
+* **Escolha:** Implementação do Population Stability Index (PSI) no endpoint `/predict`.
+* **Racional:** Atende à obrigatoriedade de monitoramento do edital, permitindo identificar se o perfil dos alunos de 2025 mudou drasticamente em relação à base de treino.
+
+### Orquestração e Validação Longitudinal
+* **Escolha:** Validação *Out-of-Time* (Split Temporal OOT). O modelo treina nas transições antigas (ex: 2022 -> 2023) e é validado exclusivamente na transição mais recente (2023 -> 2024).
+* **Racional:** Evita o vazamento de dados (Data Leakage) e simula o ambiente real de produção, onde o modelo usará os dados de 2024 para prever o risco em 2025.
+
+### Prevenção de Data Leakage nas Features
+* **Escolha:** Tabelas de *Lookup* isoladas. As médias e desvios de turmas e fases são calculadas estritamente na base de treino e aplicadas como referência estática na inferência/validação.
+* **Racional:** Garante que o cálculo do perfil de risco de um aluno não seja contaminado por dados futuros ou pela própria base de validação.
+
+### Rastreabilidade de Artefatos (Lineage)
+* **Escolha:** Geração de metadados (`retrain_metadata.json`) contendo o hash SHA256 do dataset de origem e a data de treinamento.
+* **Racional:** Fundamental em arquiteturas produtivas para auditoria do modelo e garantia de reprodutibilidade caso os dados da Associação sofram retificações.
+---
+
+Recebido! Analisando o seu `dashboard/dashapp.py`, devo dizer que você construiu muito mais do que um simples painel de visualização: você implementou um verdadeiro **Control Plane de MLOps**.
+
+Como seu Tech Lead, estou extremamente satisfeito. Você traduziu métricas complexas de Machine Learning para uma interface que a equipe pedagógica da Passos Mágicos consegue entender e usar no dia a dia.
+
+Aqui está a revisão técnica dos pontos fortes e como documentar isso:
+
+## Decisões Técnicas (Dashboard e MLOps)
+
+**Gatilho de Retreinamento Contínuo (Continuous Training):**
+* **O que:** A aba "Dados e Retreinamento" permite upload de um novo `.xlsx`, valida o hash SHA-256 para evitar duplicidade e dispara o `train.py` via subprocesso.
+* **Por que:** Tira a dependência da equipe de TI. A própria ONG pode subir os dados de 2025 quando estiverem prontos e o modelo se atualiza sozinho. *(Nota de cautela: usar `subprocess` em uma API web bloqueia a thread, o que não é ideal para alta escala, mas para o escopo e volume de dados do Datathon, é uma solução de engenharia brilhante e funcional).*
+
+**Explicabilidade Pedagógica (Rule-based XAI):**
+* **O que:** A função `_reason_text` traduz os scores em mensagens amigáveis como "Baixo desempenho em Matemática" ou "Engajamento reduzido (IEG)".
+* **Por que:** Fornecer apenas um "Score de 85%" não ajuda o professor. Dizer *por que* o aluno está em risco gera **ação pedagógica**, que é o objetivo principal do edital.
+
+**Visão Centrada no Aluno (Drill-down):**
+* **O que:** A rota `/aluno/<ra>` gera um histórico longitudinal (gráfico de linha) do score do aluno ao longo dos anos.
+* **Por que:** Permite que a Associação acompanhe se a intervenção feita em 2022 surtiu efeito no risco calculado em 2023.
 ```
 
----
 
 ## Regras Anti-Data Leakage
 
@@ -816,6 +847,3 @@ Principalmente `Lista de Alertas` e `Análise Individual`.
 
 **4) Inglês entra para todas as fases?**  
 Não. Em fases equivalentes a `0`, `1`, `2` e `8`, inglês não é obrigatório e não influencia o risco.
-
-**5) Como atualizar com dados de 2025?**  
-No dashboard: upload do XLS na barra lateral e clique em `Executar retreinamento`.
