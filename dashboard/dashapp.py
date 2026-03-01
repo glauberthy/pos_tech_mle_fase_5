@@ -290,7 +290,6 @@ def _layout(df: pd.DataFrame):
                     dcc.Tab(label="Distribuição por Fase", value="fase"),
                     dcc.Tab(label="Saúde do Modelo", value="saude"),
                     dcc.Tab(label="Monitoramento (Logs + Drift)", value="monitoramento"),
-                    dcc.Tab(label="Dados e Retreinamento", value="retrain"),
                 ],
             ),
             html.Hr(),
@@ -577,38 +576,7 @@ def render_page(pathname, tab, ano, fases, turmas, ra_query, topk, _refresh, fee
             ]
         )
 
-    return html.Div(
-        [
-            cards,
-            html.H4("Adicionar novo arquivo para retreinar"),
-            dcc.Upload(
-                id="upload-xls",
-                children=html.Div(["Arraste e solte ou ", html.A("selecione um .xlsx/.xls")]),
-                style={
-                    "width": "100%",
-                    "height": "70px",
-                    "lineHeight": "70px",
-                    "borderWidth": "1px",
-                    "borderStyle": "dashed",
-                    "borderRadius": "10px",
-                    "textAlign": "center",
-                },
-                multiple=False,
-                accept=".xlsx,.xls",
-            ),
-            html.Div(id="upload-info", style={"marginTop": "8px", "color": "#444"}),
-            html.Br(),
-            html.Button("Executar retreinamento", id="btn-retrain", n_clicks=0),
-            dcc.Loading(
-                type="circle",
-                children=html.Div(
-                    id="retrain-status",
-                    children=str((feedback or {}).get("message", "")),
-                    style={"marginTop": "10px"},
-                ),
-            ),
-        ]
-    )
+    
 
 
 @app.callback(
