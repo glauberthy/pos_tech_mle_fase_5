@@ -11,28 +11,11 @@
 
 ## 🎯 Links Importantes (Para Avaliação)
 
-<table width="100%">
-<tr>
-<td align="center" width="50%">
+| 🎬 Vídeo da Apresentação | 🚀 Projeto em Produção |
+| :---: | :---: |
+| <br>[![YouTube](https://img.shields.io/badge/YouTube-Assistir_Apresentação-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=7AaYYsEG3W4)<br><br>**👆 Clique para assistir ao pitch do projeto**<br><br> | <br>[![API REST](https://img.shields.io/badge/🤗_Acessar_API-Swagger_UI-blue?style=for-the-badge)](https://glauberthy-passos-magicos-api.hf.space/docs)<br><br>[![Dashboard](https://img.shields.io/badge/🤗_Acessar_Dashboard-Monitoramento_&_Drift-FFD21E?style=for-the-badge)](https://glauberthy-passos-magicos-dashboard.hf.space/)<br><br>**👆 Clique para testar o sistema ao vivo**<br><br> |
 
-### 🎬 Vídeo da Apresentação
-[![YouTube](https://img.shields.io/badge/YouTube-Assistir_Apresentação-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=7AaYYsEG3W4)
-
-**👆 Clique para assistir ao pitch do projeto**
-
-</td>
-<td align="center" width="50%">
-
-### 🚀 Projeto em Produção
-[![API REST](https://img.shields.io/badge/🤗_Acessar_API-Swagger_UI-blue?style=for-the-badge)](https://glauberthy-passos-magicos-api.hf.space/docs)
-<br><br>
-[![Dashboard](https://img.shields.io/badge/🤗_Acessar_Dashboard-Monitoramento_&_Drift-FFD21E?style=for-the-badge)](https://glauberthy-passos-magicos-dashboard.hf.space/)
-
-**👆 Clique para testar o sistema ao vivo**
-
-</td>
-</tr>
-</table>
+---
 
 ---
 
