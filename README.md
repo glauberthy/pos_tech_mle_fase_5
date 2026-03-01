@@ -2,6 +2,39 @@
 ## Associação Passos Mágicos – Datathon
 
 ---
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python)
+![CatBoost](https://img.shields.io/badge/CatBoost-Modelo_ML-yellow?style=for-the-badge)
+![FastAPI](https://img.shields.io/badge/FastAPI-API_REST-green?style=for-the-badge&logo=fastapi)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker)
+
+---
+
+## 🎯 Links Importantes (Para Avaliação)
+
+<table width="100%">
+<tr>
+<td align="center" width="50%">
+
+### 🎬 Vídeo da Apresentação
+[![YouTube](https://img.shields.io/badge/YouTube-Assistir_Apresentação-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=7AaYYsEG3W4)
+
+**👆 Clique para assistir ao pitch do projeto**
+
+</td>
+<td align="center" width="50%">
+
+### 🚀 Projeto em Produção
+[![API REST](https://img.shields.io/badge/🤗_Acessar_API-Swagger_UI-blue?style=for-the-badge)](https://glauberthy-passos-magicos-api.hf.space/docs)
+<br><br>
+[![Dashboard](https://img.shields.io/badge/🤗_Acessar_Dashboard-Monitoramento_&_Drift-FFD21E?style=for-the-badge)](https://glauberthy-passos-magicos-dashboard.hf.space/)
+
+**👆 Clique para testar o sistema ao vivo**
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Visão Geral do Projeto
 
