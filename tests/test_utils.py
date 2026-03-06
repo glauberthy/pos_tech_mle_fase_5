@@ -48,14 +48,14 @@ class TestMonitorDrift:
         d = np.random.default_rng(42).random(500)
         result = monitor_drift(d, d.copy(), threshold=0.25)
         assert result["drift_detected"] is False
-        assert result["status"] == "stable"
+        assert result["status"] == "ok"
 
     def test_drift_detected(self):
         baseline = np.zeros(500)  # All scores near 0
         current = np.ones(500)   # All scores near 1
         result = monitor_drift(baseline, current, threshold=0.25)
         assert result["drift_detected"] is True
-        assert result["status"] == "DRIFT DETECTED"
+        assert result["status"] == "drift_detected"
 
     def test_returns_psi_key(self):
         d = np.random.random(100)
@@ -225,20 +225,20 @@ class TestMonitorDriftSeverity:
         current = np.clip(baseline + 0.25, 0, 1)
         result = monitor_drift(baseline, current, threshold=0.25)
         # PSI could be low/moderate depending on shift; just validate structure
-        assert result["severity"] in ("low", "moderate", "high")
+        assert result["severity"] in ("ok", "warning", "critical")
         assert "psi" in result
         assert "drift_detected" in result
 
     def test_low_severity_on_identical(self):
         d = np.random.default_rng(0).random(300)
         result = monitor_drift(d, d.copy())
-        assert result["severity"] == "low"
+        assert result["severity"] == "ok"
 
     def test_high_severity_on_extreme_shift(self):
         baseline = np.zeros(500)
         current = np.ones(500)
         result = monitor_drift(baseline, current, threshold=0.25)
-        assert result["severity"] == "high"
+        assert result["severity"] == "critical"
         assert result["drift_detected"] is True
 
     def test_n_baseline_and_current_correct(self):
