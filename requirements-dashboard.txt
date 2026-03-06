@@ -1,6 +1,7 @@
 # ── Dashboard Space – dependências mínimas ───────────────────────────────────
 # UI
 dash==4.0.0
+dash-bootstrap-components==2.0.4
 plotly==6.5.2
 Flask==3.1.3
 

@@ -145,6 +145,7 @@ def compute_psi(
     edges = np.linspace(0.0, 1.0, bins + 1)
     b_pct = np.histogram(b, bins=edges)[0] / max(len(b), 1)
     c_pct = np.histogram(c, bins=edges)[0] / max(len(c), 1)
+      
 
     b_pct = np.clip(b_pct, eps, None)
     c_pct = np.clip(c_pct, eps, None)
@@ -155,18 +156,18 @@ def compute_psi(
 def monitor_drift(
     baseline: np.ndarray,
     current: np.ndarray,
-    threshold: float = 0.25,
+    threshold: float = 0.2,
 ) -> dict:
     """Drift summary object used by API/dashboard."""
     b = np.asarray(baseline, dtype=float)
     c = np.asarray(current, dtype=float)
     psi = compute_psi(b, c)
     if psi < 0.1:
-        severity = "low"
+        severity = "ok"
     elif psi < threshold:
-        severity = "moderate"
+        severity = "warning"
     else:
-        severity = "high"
+        severity = "critical"
     return {
         "psi": round(float(psi), 4),
         "threshold": float(threshold),
@@ -178,7 +179,7 @@ def monitor_drift(
         "current_std": round(float(np.std(c)) if len(c) else 0.0, 4),
         "n_baseline": int(len(b)),
         "n_current": int(len(c)),
-        "status": "DRIFT DETECTED" if psi >= threshold else "stable",
+        "status": "drift_detected" if psi >= threshold else "ok",
     }
 
 

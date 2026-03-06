@@ -1,1 +1,7 @@
-{}
+{
+  "tests/test_utils.py::TestMonitorDrift::test_no_drift_same_distribution": true,
+  "tests/test_utils.py::TestMonitorDrift::test_drift_detected": true,
+  "tests/test_utils.py::TestMonitorDriftSeverity::test_moderate_severity": true,
+  "tests/test_utils.py::TestMonitorDriftSeverity::test_low_severity_on_identical": true,
+  "tests/test_utils.py::TestMonitorDriftSeverity::test_high_severity_on_extreme_shift": true
+}

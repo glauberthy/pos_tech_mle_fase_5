@@ -174,6 +174,11 @@ def main():
     valid_fe[cols_to_save].to_csv(eval_subdir / "valid_scored.csv", index=False)
     logger.info("Scored validation set saved -> %s", eval_subdir / "valid_scored.csv")
 
+    # Save scored training set for OOT drift (train vs validation)
+    train_cols = [c for c in cols_to_save if c in train_scored.columns]
+    train_scored[train_cols].to_csv(eval_subdir / "train_scored.csv", index=False)
+    logger.info("Scored training set saved -> %s", eval_subdir / "train_scored.csv")
+
     # Save multi-year scored history for dashboard slicing by ano_base
     history_cols = (
         ["ra", "ano_base", "fase", "turma", "score", "target", "dataset_split"]

@@ -10,6 +10,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from src.monitoring.logging import log_event
+
 logger = logging.getLogger(__name__)
 
 EPS = 1e-6
@@ -62,7 +64,12 @@ def _compute_context(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def make_features(df: pd.DataFrame, lookup: Optional[dict] = None, is_train: bool = True) -> tuple[pd.DataFrame, dict]:
+def make_features(
+    df: pd.DataFrame,
+    lookup: Optional[dict] = None,
+    is_train: bool = True,
+    request_id: Optional[str] = None,
+) -> tuple[pd.DataFrame, dict]:
     """Notebook-aligned main feature builder."""
     df = df.copy()
     df = _compute_base_scores(df)
@@ -181,7 +188,21 @@ def make_features(df: pd.DataFrame, lookup: Optional[dict] = None, is_train: boo
         if col in out.columns:
             out[col] = out[col].astype(str).fillna("MISSING_CATEGORY")
 
-    logger.info("Features built: n=%d rows, %d cols", len(out), len(out.columns))
+    n_records = len(out)
+    n_features = len(out.columns)
+    num_cols = out.select_dtypes(include=[np.number]).columns
+    denom = n_records * len(num_cols) if len(num_cols) else 1
+    missing_rate = float(out[num_cols].isna().sum().sum() / denom) if denom > 0 else 0.0
+
+    if not is_train and request_id:
+        log_event(
+            logger, logging.INFO, "Features built",
+            event_type="predict_batch",
+            request_id=request_id,
+            n_records=n_records,
+            n_features=n_features,
+            missing_rate=round(missing_rate, 4),
+        )
     return out, lookup
 
 
@@ -189,9 +210,10 @@ def build_features(
     df: pd.DataFrame,
     lookup_tables: Optional[dict] = None,
     is_train: bool = True,
+    request_id: Optional[str] = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Compatibility wrapper keeping old function name/signature."""
-    return make_features(df, lookup=lookup_tables, is_train=is_train)
+    return make_features(df, lookup=lookup_tables, is_train=is_train, request_id=request_id)
 
 
 def get_feature_columns(df: pd.DataFrame) -> tuple[list[str], list[str]]:

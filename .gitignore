@@ -49,5 +49,5 @@ __pycache__/
 *.log
 
 # artifacts (se não quiser versionar o binário do modelo no git)
-models/*.joblib
-models/*.pkl
+# models/*.joblib
+# models/*.pkl
