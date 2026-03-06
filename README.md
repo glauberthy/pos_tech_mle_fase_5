@@ -93,7 +93,7 @@ O coordenador escolhe `k_pct ∈ {10, 15, 20, 25}` conforme a capacidade de aten
 | ML | CatBoost 1.2 | Classificador de risco |
 | Explicabilidade | SHAP | Top-3 fatores de risco por aluno |
 | API | FastAPI + Uvicorn | Endpoints REST de predição e monitoramento |
-| Dashboard | Plotly Dash | Visualização pedagógica interativa |
+| Dashboard | Plotly Dash + Bootstrap | Visualização pedagógica interativa |
 | Dados | Pandas + OpenPyXL | Processamento do PEDE (.xlsx) |
 | Estatística | NumPy + SciPy | PSI, cálculos de drift |
 | Testes | Pytest + Coverage | Cobertura ≥ 80% (atual: ~96%) |
@@ -113,7 +113,8 @@ datathon/
 │   └── routes.py                 # Handlers de endpoints e monitoramento
 │
 ├── dashboard/                    # Interface visual do usuário
-│   └── dashapp.py                # Dashboard pedagógico (Plotly/Dash)
+│   ├── dashapp.py                # Dashboard pedagógico (Plotly Dash + Bootstrap)
+│   └── student_detail.py         # Layout de detalhe individual do aluno
 │
 ├── src/                          # Core Modules (Lógica de Negócio e ML)
 |   ├── train.py                  # Lógica de orquestração do pipeline de ML
@@ -122,12 +123,16 @@ datathon/
 │   ├── model_training.py         # Treinamento do modelo CatBoost
 │   ├── inference.py              # Lógica de predição e explicações SHAP
 │   ├── evaluation.py             # Métricas (AUC, Recall@TopK)
-│   └── utils.py                  # Funções auxiliares e loggers
+│   ├── utils.py                  # Funções auxiliares e loggers
+│   └── monitoring/
+│       ├── __init__.py
+│       └── logging.py            # Logging estruturado (log_event)
 │
 ├── models/                       # Artefatos do Modelo e Monitoramento
 │   ├── model/                    # Modelo serializado (.cbm) e metadados
 │   ├── evaluation/               # Relatórios de performance e scores gerados
-│   └── monitoring/               # Logs de Data Drift (PSI) e eventos
+│   ├── monitoring/               # Logs de Data Drift (PSI) e eventos
+│   └── baselines/                # Baselines imutáveis com SHA-256 para drift
 │
 ├── notebooks/                    # Prototipação, EDA e validação de hipóteses
 ├── tests/                        # Suite de testes unitários (Pytest)
@@ -140,6 +145,45 @@ datathon/
 ├── Makefile                      # Automação de comandos úteis
 └── train.py                      # Entrypoint/Wrapper para execução do retreino
 ```
+
+### Visão Arquitetural — Dois Spaces no Hugging Face
+
+```mermaid
+flowchart LR
+    subgraph HF["🤗 Hugging Face Spaces"]
+        subgraph SPACE_API["Space 1 — passos-magicos-api\nDockerfile.api · porta 7860"]
+            A1[FastAPI + Uvicorn]
+            A2[src/\npreprocessing\nfeature_engineering\nmodel_training\ninference\nevaluation\nutils\nmonitoring]
+            A3[(models/\ncatboost_model.cbm\nlookup_tables.pkl\nvalid_scored.csv\ntrain_scored.csv\ndrift_history.jsonl\nproduction_snapshots/)]
+            A1 --> A2
+            A2 <--> A3
+        end
+
+        subgraph SPACE_DASH["Space 2 — passos-magicos-dashboard\nDockerfile · porta 7860"]
+            B1[Plotly Dash\n+ Bootstrap]
+            B2[dashboard/\ndashapp.py\nstudent_detail.py]
+            B3[(models/\nvalid_scored.csv\nscored_history.csv\ndrift_history.jsonl\nmonitoring.log)]
+            B1 --> B2
+            B2 <--> B3
+        end
+
+        SPACE_DASH -- "HTTP GET /metrics/drift\nGET /metrics/drift/history" --> SPACE_API
+        SPACE_DASH -- "HTTP GET /explain/{ra}" --> SPACE_API
+    end
+
+    subgraph LOCAL["💻 Local / CI"]
+        C1[make pipeline\nsrc/train.py]
+        C2[make test-cov\npytest + 96% cov]
+        C3[make compose-up\ndocker-compose.yml]
+    end
+
+    C1 -- "gera artefatos" --> A3
+    C3 -- "replica HF localmente" --> HF
+
+    USER(["👩‍🏫 Coordenadora\nPassos Mágicos"]) -- "Dashboard\nAlertas + Drift" --> SPACE_DASH
+    DEV(["🧑‍💻 Developer /\nSistema externo"]) -- "POST /predict\nGET /alert" --> SPACE_API
+```
+
 ---
 ## Decisões Técnicas e Racional de MLOps 
 > Esta seção detalha as escolhas feitas para atender aos requisitos de impacto social e robustez técnica do edital.
@@ -247,6 +291,60 @@ Regra central do target:
 - Entram no dataset alunos pareados (`RA`) entre anos adjacentes.
 - O rótulo é calculado por comparação de estado entre `T` e `T+1`.
 
+### Modelo de Dados — Entidades e Relacionamentos
+
+```mermaid
+erDiagram
+    ALUNO {
+        string ra PK
+        string genero
+        int    ano_nasc
+        int    ano_ingresso
+        string instituicao
+    }
+    REGISTRO_ANUAL {
+        string ra    FK
+        int    ano_base
+        string fase
+        string turma
+        float  matem
+        float  portug
+        float  ingles
+        float  ieg
+        float  iaa
+        float  ips
+        float  ipp
+        int    defasagem
+    }
+    PAR_TEMPORAL {
+        string ra         FK
+        string pair_label
+        int    defasagem_t
+        int    defasagem_t1
+        int    target
+    }
+    SCORED_RECORD {
+        string ra       FK
+        int    ano_base
+        float  score
+        bool   alerta
+        list   top3_factors
+        string dataset_split
+    }
+    DRIFT_EVENT {
+        string timestamp_utc
+        string event_type
+        string baseline_id
+        float  psi
+        string severity
+        int    n_students
+    }
+    ALUNO         ||--o{ REGISTRO_ANUAL  : "1 registro por ano"
+    ALUNO         ||--o{ PAR_TEMPORAL    : "N pares temporais"
+    PAR_TEMPORAL  ||--|| SCORED_RECORD   : "gera 1 score"
+    SCORED_RECORD }o--o{ DRIFT_EVENT     : "lotes geram eventos"
+```
+
 ---
 
 ## Modelo
@@ -303,8 +401,8 @@ python dashboard/dashapp.py --host 0.0.0.0 --port 8502
 ```
 
 Acesse:
-- API + docs interativas: `http://localhost:8000/docs`
-- Dashboard pedagógico: `http://localhost:8502`
+- API + docs interativas: `http://localhost:7860/docs`
+- Dashboard pedagógico: `http://localhost:8505`
 
 ---
 
@@ -341,6 +439,46 @@ make clean             # Remove caches e artefatos temporários
 ## Etapas do Pipeline de Machine Learning
 
 O script `src/train.py` executa as etapas abaixo em sequência. Cada etapa é implementada em um módulo independente do pacote `src/`.
+
+```mermaid
+flowchart TD
+    A(["📂 PEDE.xlsx\nPEDE2022 · PEDE2023 · PEDE2024"]) --> B
+
+    subgraph PRE["1 · Preprocessing"]
+        B["load_all_years\nnormaliza colunas · tipos · dedup"] --> C["build_longitudinal_dataset\npareia RA entre anos adjacentes\ntarget = defasagem_t1 > defasagem_t"]
+    end
+
+    subgraph FE["2 · Feature Engineering"]
+        C --> D["_compute_base_scores\nmedia_provas · disp_provas · fez_ingles"]
+        D --> E["_compute_context\ntempo_casa · iaa_participou"]
+        E --> F["Regra de negócio\ningles = NaN nas fases 0·1·2·8"]
+        F --> G["Lookup Tables — treino\nturma/fase/global: mean·std·P25·P75"]
+        G --> H["Deltas e Z-scores\ndelta_turma_X · z_turma_X · abaixo_p25_turma_X"]
+    end
+
+    subgraph SPLIT["3 · Split Temporal — sem shuffle"]
+        H --> I["Train\nPares 2022→2023"]
+        H --> J["Validation OOT\nPares 2023→2024"]
+    end
+
+    subgraph TRAIN["4 · Model Training"]
+        I --> K["CatBoostClassifier\niterations=2500 · depth=8\nauto_class_weights=Balanced"]
+        J --> K
+    end
+
+    subgraph EVAL["5 · Evaluation"]
+        K --> L["predict_proba\n+ SHAP values"]
+        L --> M["AUC · Recall@TopK\nPrecision@TopK · Lift@TopK"]
+    end
+
+    subgraph ARTEFACTS["6 · Artefatos salvos em models/"]
+        K --> N1[catboost_model.cbm]
+        G --> N2[lookup_tables.pkl]
+        M --> N3[evaluation_results.json]
+        L --> N4["valid_scored.csv\ntrain_scored.csv\nscored_history.csv"]
+        N4 --> N5["drift_history.jsonl\nretrain_metadata.json"]
+    end
+```
 
 ### 1. Carregamento e Padronização (`src/preprocessing.py`)
 
@@ -398,8 +536,30 @@ Resultados salvos em `models/evaluation/evaluation_results.json`.
 ### 6. Monitoramento de Drift (`src/utils.py`)
 
 - Calcula o **PSI (Population Stability Index)** entre a distribuição de scores da validação (baseline) e de lotes novos enviados via API.
-- Classifica a severidade: `ok` (PSI < 0.1), `warning` (0.1–0.2), `critical` (> 0.2).
+- Classifica a severidade: `ok` (PSI < 0.1), `warning` (0.1–0.2), `critical` (≥ 0.2).
+- Status do campo `status`: `ok` (sem drift) ou `drift_detected` (drift acima do threshold).
 - Eventos de drift são gravados em `models/monitoring/drift_history.jsonl` a cada chamada ao `/predict`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ok : startup / baseline carregado
+
+    ok : ✅ ok\nPSI < 0.10 — Modelo estável
+    warning : ⚠️ warning\n0.10 ≤ PSI < 0.20 — Avaliar retreino
+    critical : 🔴 critical\nPSI ≥ 0.20 — Retreino recomendado
+    retrain : 🔄 retreinamento\ntrain.py em execução
+
+    ok --> warning : PSI sobe ≥ 0.10
+    warning --> ok : PSI cai < 0.10
+    warning --> critical : PSI sobe ≥ 0.20
+    critical --> warning : PSI cai < 0.20
+    critical --> ok : PSI cai < 0.10
+
+    ok --> retrain : gatilho manual (upload XLS)
+    warning --> retrain : decide retreinar
+    critical --> retrain : retreino obrigatório
+    retrain --> ok : concluído — novo baseline · PSI volta a 0
+```
 
 ---
 
@@ -426,6 +586,7 @@ Saídas em `models/`:
 - `model_meta.json` – metadados (features, best iteration)
 - `evaluation_results.json` – métricas de validação
 - `valid_scored.csv` – scores do conjunto de validação
+- `train_scored.csv` – scores do conjunto de treino (para drift OOT)
 - `scored_history.csv` – histórico de scores multi-ano para o dashboard
 - `cohort_summary.json` – resumo de amostragem (bruto, elegível, pareado, usado)
 
@@ -449,8 +610,37 @@ Documentação interativa (Swagger UI): `http://localhost:8000/docs`
 | POST | `/predict` | Scoring de lote de alunos em tempo real |
 | GET | `/alert?k_pct=15` | Lista de alerta Top-K% do conjunto de validação |
 | GET | `/explain/{ra}` | Explicação SHAP de um aluno pelo RA |
-| GET | `/metrics/drift` | Relatório PSI de drift atual vs. baseline |
-| GET | `/metrics/drift/history` | Histórico de eventos de monitoramento |
+| GET | `/metrics/drift?mode=oot` | Relatório PSI (modos: `internal`, `oot`, `prod`) |
+| GET | `/metrics/drift/history?mode=prod&window=30d` | Histórico filtrado por modo e janela |
+
+### Fluxo de uma Requisição `/predict`
+
+```mermaid
+sequenceDiagram
+    actor C as Cliente
+    participant API as FastAPI
+    participant FE as feature_engineering
+    participant INF as inference
+    participant MON as monitoring
+    participant FS as models/ (disco)
+
+    C->>+API: POST /predict { students: [...], k_pct: 15 }
+    API->>API: gera request_id / inicia timer
+    API->>+FE: build_features(df, lookup_tables, is_train=False)
+    FE-->>-API: fe_df (features prontas)
+    API->>+INF: score_students(fe_df, model_dir)
+    INF->>INF: predict_proba + _add_shap_explanations()
+    INF-->>-API: scored_df (score · top3_factors)
+    API->>INF: alert_list(scored, k_pct)
+    INF-->>API: scored com alerta=True/False
+    API->>+MON: _persist_production_snapshots()
+    MON->>FS: dt=YYYY-MM-DD/predict_events.jsonl
+    MON-->>-API: ok
+    API->>MON: monitor_drift(baseline, current_scores)
+    MON-->>API: psi · severity · status
+    API->>FS: drift_history.jsonl
+    API-->>-C: 200 OK { n_students, n_alerta, students: [{ra, score, alerta, top3_factors}] }
+```
 
 ---
 
@@ -467,7 +657,8 @@ curl http://localhost:8000/health
 {
   "status": "ok",
   "model_loaded": true,
-  "lookup_tables_loaded": true
+  "lookup_tables_loaded": true,
+  "baseline_id": "legacy_valid_scored"
 }
 ```
 
@@ -653,16 +844,35 @@ Se o RA não for encontrado, retorna HTTP 404:
 
 Calcula o PSI (Population Stability Index) comparando os scores atuais do conjunto de validação com o baseline estabelecido no treinamento. Também retorna a análise de drift por Fase.
 
+O endpoint suporta três modos via `?mode=`:
+
+| Modo | Comparação | Uso |
+|------|-----------|-----|
+| `internal` | validação vs. ela mesma | sanidade |
+| `oot` | treino vs. validação | avaliação OOT |
+| `prod` | baseline vs. snapshots de produção | monitoramento real |
+
+Para o modo `prod`, use `?window=30d` (aceita `7d` a `365d`).
+
 ```bash
-curl "http://localhost:8000/metrics/drift"
+# OOT (padrão recomendado)
+curl "http://localhost:8000/metrics/drift?mode=oot"
+
+# Produção com janela de 30 dias
+curl "http://localhost:8000/metrics/drift?mode=prod&window=30d"
 ```
 
-**Resposta esperada:**
+**Resposta esperada (modo oot):**
 ```json
 {
   "psi": 0.012,
   "severity": "ok",
-  "n_baseline": 312,
+  "status": "ok",
+  "mode": "oot",
+  "window": null,
+  "source": "oot",
+  "baseline_id": null,
+  "n_baseline": 600,
   "n_current": 312,
   "phase_drift": [
     { "fase": "FASE5", "psi": 0.031, "severity": "ok", "n_current": 48, "n_baseline": 48 },
@@ -672,7 +882,7 @@ curl "http://localhost:8000/metrics/drift"
 }
 ```
 
-Interpretação:
+Interpretação da severidade:
 - `psi < 0.1` → `"ok"` (distribuição estável)
 - `0.1 ≤ psi < 0.2` → `"warning"` (avaliar necessidade de retreinamento)
 - `psi ≥ 0.2` → `"critical"` (retreinamento recomendado)
@@ -723,7 +933,10 @@ curl "http://localhost:8000/metrics/drift/history?limit=3"
 }
 ```
 
-O parâmetro `limit` aceita valores de `1` a `1000` (padrão: `100`).
+Parâmetros:
+- `limit`: 1–1000 (padrão: `100`)
+- `mode`: `internal` | `oot` | `prod` (padrão: `prod`)
+- `window`: janela de tempo em dias, ex.: `30d` (apenas para `mode=prod`)
 
 ---
 
@@ -731,20 +944,22 @@ O parâmetro `limit` aceita valores de `1` a `1000` (padrão: `100`).
 
 ```bash
 # Iniciar o dashboard
-python dashboard/dashapp.py --host 0.0.0.0 --port 8502
+python dashboard/dashapp.py --host 0.0.0.0 --port 8505
 
-# Porta alternativa
-python dashboard/dashapp.py --host 0.0.0.0 --port 8503
+# Com integração à API local
+API_BASE_URL=http://localhost:7860 python dashboard/dashapp.py --port 8505 --debug
 ```
 
 Features:
-- Filtros globais: **Ano-base**, **Fase**, **Turma**, **RA** e **Top-K% por fase**
-- Aba **Início** com KPIs (total, alertas, % alerta, AUC) e visão de alertas por fase
+- Filtros globais: **Ano-base**, **Fase(s)**, **Turma(s)**, **Top-K%** e **Janela de produção**
+- Seletor de contexto: **OOT** (treino×validação) ou **Produção** (baseline×snapshots)
+- Aba **Visão Geral (Diagnóstico)** — matriz Drift×Coerência, KPIs (PSI, AUC, Precision@K, Recall@K), PSI trend, contribuição por bin, calibração OOT, trade-off K
 - Aba **Alertas** com tabela operacional (RA, Fase, Turma, Score, Motivos, link de detalhe)
 - Aba **Distribuição por Fase** com `% em alerta` e `score médio`
-- Aba **Saúde do Modelo** com métricas Top-K e histórico de drift (quando disponível)
-- Rota de detalhe por aluno (`/aluno/<ra>`) com histórico de score e indicadores
-- Aba **Dados e Retreinamento** com upload `.xlsx` e execução do `train.py`
+- Aba **Monitoramento (Logs)** com log ao vivo, tráfego/erros, P95 de latência e tabela de eventos de drift
+- Aba **Dados & Retreinamento** com baselines disponíveis e checklist de retreino
+- Rota de detalhe por aluno (`/aluno/<ra>`) com histórico de score, SHAP, distribuição na fase
+- Exportar snapshot (CSV) e gerar relatório (JSON) diretamente pelo painel
 
 ### Atualização automática com novo ano (ex.: 2025)
 
