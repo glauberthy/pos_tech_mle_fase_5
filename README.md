@@ -151,37 +151,37 @@ datathon/
 ```mermaid
 flowchart LR
     subgraph HF["🤗 Hugging Face Spaces"]
-        subgraph SPACE_API["Space 1 — passos-magicos-api\nDockerfile.api · porta 7860"]
+        subgraph SPACE_API["Space 1 — passos-magicos-api<br/>Dockerfile.api · porta 7860"]
             A1[FastAPI + Uvicorn]
-            A2[src/\npreprocessing\nfeature_engineering\nmodel_training\ninference\nevaluation\nutils\nmonitoring]
-            A3[(models/\ncatboost_model.cbm\nlookup_tables.pkl\nvalid_scored.csv\ntrain_scored.csv\ndrift_history.jsonl\nproduction_snapshots/)]
+            A2[src/<br/>preprocessing<br/>feature_engineering<br/>model_training<br/>inference<br/>evaluation<br/>utils<br/>monitoring]
+            A3[(models/<br/>catboost_model.cbm<br/>lookup_tables.pkl<br/>valid_scored.csv<br/>train_scored.csv<br/>drift_history.jsonl<br/>production_snapshots/)]
             A1 --> A2
             A2 <--> A3
         end
 
-        subgraph SPACE_DASH["Space 2 — passos-magicos-dashboard\nDockerfile · porta 7860"]
-            B1[Plotly Dash\n+ Bootstrap]
-            B2[dashboard/\ndashapp.py\nstudent_detail.py]
-            B3[(models/\nvalid_scored.csv\nscored_history.csv\ndrift_history.jsonl\nmonitoring.log)]
+        subgraph SPACE_DASH["Space 2 — passos-magicos-dashboard<br/>Dockerfile · porta 7860"]
+            B1[Plotly Dash<br/>+ Bootstrap]
+            B2[dashboard/<br/>dashapp.py<br/>student_detail.py]
+            B3[(models/<br/>valid_scored.csv<br/>scored_history.csv<br/>drift_history.jsonl<br/>monitoring.log)]
             B1 --> B2
             B2 <--> B3
         end
 
-        SPACE_DASH -- "HTTP GET /metrics/drift\nGET /metrics/drift/history" --> SPACE_API
+        SPACE_DASH -- "HTTP GET /metrics/drift<br/>GET /metrics/drift/history" --> SPACE_API
         SPACE_DASH -- "HTTP GET /explain/{ra}" --> SPACE_API
     end
 
     subgraph LOCAL["💻 Local / CI"]
-        C1[make pipeline\nsrc/train.py]
-        C2[make test-cov\npytest + 96% cov]
-        C3[make compose-up\ndocker-compose.yml]
+        C1[make pipeline<br/>src/train.py]
+        C2[make test-cov<br/>pytest + 96% cov]
+        C3[make compose-up<br/>docker-compose.yml]
     end
 
     C1 -- "gera artefatos" --> A3
     C3 -- "replica HF localmente" --> HF
 
-    USER(["👩‍🏫 Coordenadora\nPassos Mágicos"]) -- "Dashboard\nAlertas + Drift" --> SPACE_DASH
-    DEV(["🧑‍💻 Developer /\nSistema externo"]) -- "POST /predict\nGET /alert" --> SPACE_API
+    USER(["👩‍🏫 Coordenadora<br/>Passos Mágicos"]) -- "Dashboard<br/>Alertas + Drift" --> SPACE_DASH
+    DEV(["🧑‍💻 Developer /<br/>Sistema externo"]) -- "POST /predict<br/>GET /alert" --> SPACE_API
 ```
 
 ---
@@ -442,41 +442,41 @@ O script `src/train.py` executa as etapas abaixo em sequência. Cada etapa é im
 
 ```mermaid
 flowchart TD
-    A(["📂 PEDE.xlsx\nPEDE2022 · PEDE2023 · PEDE2024"]) --> B
+    A(["📂 PEDE.xlsx<br/>PEDE2022 · PEDE2023 · PEDE2024"]) --> B
 
     subgraph PRE["1 · Preprocessing"]
-        B["load_all_years\nnormaliza colunas · tipos · dedup"] --> C["build_longitudinal_dataset\npareia RA entre anos adjacentes\ntarget = defasagem_t1 > defasagem_t"]
+        B["load_all_years<br/>normaliza colunas · tipos · dedup"] --> C["build_longitudinal_dataset<br/>pareia RA entre anos adjacentes<br/>target = defasagem_t1 > defasagem_t"]
     end
 
     subgraph FE["2 · Feature Engineering"]
-        C --> D["_compute_base_scores\nmedia_provas · disp_provas · fez_ingles"]
-        D --> E["_compute_context\ntempo_casa · iaa_participou"]
-        E --> F["Regra de negócio\ningles = NaN nas fases 0·1·2·8"]
-        F --> G["Lookup Tables — treino\nturma/fase/global: mean·std·P25·P75"]
-        G --> H["Deltas e Z-scores\ndelta_turma_X · z_turma_X · abaixo_p25_turma_X"]
+        C --> D["_compute_base_scores<br/>media_provas · disp_provas · fez_ingles"]
+        D --> E["_compute_context<br/>tempo_casa · iaa_participou"]
+        E --> F["Regra de negócio<br/>ingles = NaN nas fases 0·1·2·8"]
+        F --> G["Lookup Tables — treino<br/>turma/fase/global: mean·std·P25·P75"]
+        G --> H["Deltas e Z-scores<br/>delta_turma_X · z_turma_X · abaixo_p25_turma_X"]
     end
 
     subgraph SPLIT["3 · Split Temporal — sem shuffle"]
-        H --> I["Train\nPares 2022→2023"]
-        H --> J["Validation OOT\nPares 2023→2024"]
+        H --> I["Train<br/>Pares 2022→2023"]
+        H --> J["Validation OOT<br/>Pares 2023→2024"]
     end
 
     subgraph TRAIN["4 · Model Training"]
-        I --> K["CatBoostClassifier\niterations=2500 · depth=8\nauto_class_weights=Balanced"]
+        I --> K["CatBoostClassifier<br/>iterations=2500 · depth=8<br/>auto_class_weights=Balanced"]
         J --> K
     end
 
     subgraph EVAL["5 · Evaluation"]
-        K --> L["predict_proba\n+ SHAP values"]
-        L --> M["AUC · Recall@TopK\nPrecision@TopK · Lift@TopK"]
+        K --> L["predict_proba<br/>+ SHAP values"]
+        L --> M["AUC · Recall@TopK<br/>Precision@TopK · Lift@TopK"]
     end
 
     subgraph ARTEFACTS["6 · Artefatos salvos em models/"]
         K --> N1[catboost_model.cbm]
         G --> N2[lookup_tables.pkl]
         M --> N3[evaluation_results.json]
-        L --> N4["valid_scored.csv\ntrain_scored.csv\nscored_history.csv"]
-        N4 --> N5["drift_history.jsonl\nretrain_metadata.json"]
+        L --> N4["valid_scored.csv<br/>train_scored.csv<br/>scored_history.csv"]
+        N4 --> N5["drift_history.jsonl<br/>retrain_metadata.json"]
     end
 ```
 
@@ -544,10 +544,10 @@ Resultados salvos em `models/evaluation/evaluation_results.json`.
 stateDiagram-v2
     [*] --> ok : startup / baseline carregado
 
-    ok : ✅ ok\nPSI < 0.10 — Modelo estável
-    warning : ⚠️ warning\n0.10 ≤ PSI < 0.20 — Avaliar retreino
-    critical : 🔴 critical\nPSI ≥ 0.20 — Retreino recomendado
-    retrain : 🔄 retreinamento\ntrain.py em execução
+    ok : ✅ ok<br/>PSI < 0.10 — Modelo estável
+    warning : ⚠️ warning<br/>0.10 ≤ PSI < 0.20 — Avaliar retreino
+    critical : 🔴 critical<br/>PSI ≥ 0.20 — Retreino recomendado
+    retrain : 🔄 retreinamento<br/>train.py em execução
 
     ok --> warning : PSI sobe ≥ 0.10
     warning --> ok : PSI cai < 0.10
