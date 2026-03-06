@@ -277,6 +277,21 @@ def _fetch_drift_history(api_url: str, mode: str, window: str, limit: int = 200)
     return []
 
 
+def _fetch_logs_api(api_url: str, lines: int = 80) -> dict | None:
+    """Chama GET /metrics/logs na API. Retorna dict com 'content' e 'kpis', ou None se falhar."""
+    if not api_url:
+        return None
+    try:
+        qs = urllib.parse.urlencode({"lines": lines})
+        req = urllib.request.Request(f"{api_url.rstrip('/')}/metrics/logs?{qs}", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                return json.loads(resp.read().decode())
+    except Exception:
+        pass
+    return None
+
+
 def _get_drift_history(mode: str, window: str, limit: int = 200) -> list:
     api_url = os.environ.get("API_BASE_URL", "").rstrip("/")
     hist = _fetch_drift_history(api_url, mode, window, limit)
@@ -291,6 +306,11 @@ def _get_drift_history(mode: str, window: str, limit: int = 200) -> list:
 
 
 def _read_monitoring_log(lines: int = 80) -> str:
+    api_url = os.environ.get("API_BASE_URL", "").rstrip("/")
+    if api_url:
+        data = _fetch_logs_api(api_url, lines)
+        if data is not None:
+            return data.get("content", "").strip() or "(arquivo vazio)"
     if not MONITORING_LOG.exists():
         return "Arquivo monitoring.log não encontrado. Inicie a API para gerar logs."
     try:
@@ -302,7 +322,17 @@ def _read_monitoring_log(lines: int = 80) -> str:
 
 
 def _parse_monitoring_log_local() -> tuple[int, int, float]:
-    """Formato do log da API (event_type, latency_ms). Retorna (tráfego, erros, p95_ms)."""
+    """Retorna (n_requests, n_errors, p95_ms). Tenta API primeiro, depois arquivo local."""
+    api_url = os.environ.get("API_BASE_URL", "").rstrip("/")
+    if api_url:
+        data = _fetch_logs_api(api_url, lines=80)
+        if data is not None and "kpis" in data:
+            kpis = data["kpis"]
+            return (
+                int(kpis.get("n_requests", 0)),
+                int(kpis.get("n_errors", 0)),
+                float(kpis.get("p95_latency_ms", 0.0)),
+            )
     n_requests = 0
     n_errors = 0
     latencies: list[float] = []

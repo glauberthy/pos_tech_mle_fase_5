@@ -685,3 +685,52 @@ def drift_history(
         "window": effective_window,
         "events": filtered[-limit:],
     }
+
+
+@router.get("/metrics/logs")
+def monitoring_logs(
+    lines: int = Query(default=80, ge=1, le=500),
+):
+    """Return last N lines of monitoring.log and parsed KPIs (requests, errors, p95 latency)."""
+    import re as _re
+
+    raw_lines: list[str] = []
+    if MONITORING_LOG.exists():
+        try:
+            all_lines = MONITORING_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+            raw_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        except Exception:
+            pass
+
+    # parse KPIs from the full file
+    n_requests = 0
+    n_errors = 0
+    latencies: list[float] = []
+    if MONITORING_LOG.exists():
+        try:
+            text = MONITORING_LOG.read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                if "event_type" not in line:
+                    continue
+                if "event_type=error" in line:
+                    n_errors += 1
+                elif "event_type=predict_batch" in line and "Predict batch complete" in line:
+                    n_requests += 1
+                    m = _re.search(r"latency_ms=(\d+)", line)
+                    if m:
+                        latencies.append(float(m.group(1)))
+        except Exception:
+            pass
+
+    import numpy as _np
+    p95 = float(_np.percentile(latencies, 95)) if latencies else 0.0
+
+    return {
+        "n_lines": len(raw_lines),
+        "content": "\n".join(reversed(raw_lines)),
+        "kpis": {
+            "n_requests": n_requests,
+            "n_errors": n_errors,
+            "p95_latency_ms": round(p95, 1),
+        },
+    }
