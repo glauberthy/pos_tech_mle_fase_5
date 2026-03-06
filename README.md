@@ -232,7 +232,6 @@ Aqui está a revisão técnica dos pontos fortes e como documentar isso:
 **Visão Centrada no Aluno (Drill-down):**
 * **O que:** A rota `/aluno/<ra>` gera um histórico longitudinal (gráfico de linha) do score do aluno ao longo dos anos.
 * **Por que:** Permite que a Associação acompanhe se a intervenção feita em 2022 surtiu efeito no risco calculado em 2023.
-```
 
 
 ## Regras Anti-Data Leakage

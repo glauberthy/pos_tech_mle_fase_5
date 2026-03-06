@@ -46,10 +46,14 @@ COPY src/       src/
 COPY models/ models/
 
 # ── Diretório de dados (uploads de retreino em runtime) ───────────────────────
-RUN mkdir -p data
+RUN mkdir -p data models/monitoring models/production_snapshots
 
 # ── Wrapper de retreino (chamado via subprocess pelo dashapp.py) ──────────────
 COPY train.py .
+
+# ── Usuário não-root (obrigatório no HF Spaces) ───────────────────────────────
+RUN useradd -m -u 1000 user && chown -R user:user /app
+USER user
 
 ENV PYTHONPATH=/app
 

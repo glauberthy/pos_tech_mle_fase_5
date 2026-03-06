@@ -49,7 +49,11 @@ COPY src/   src/
 # ── Modelo pré-treinado (baked-in na imagem) ──────────────────────────────────
 COPY models/ models/
 
-RUN mkdir -p data
+RUN mkdir -p data models/monitoring models/production_snapshots
+
+# ── Usuário não-root (obrigatório no HF Spaces) ───────────────────────────────
+RUN useradd -m -u 1000 user && chown -R user:user /app
+USER user
 
 ENV PYTHONPATH=/app
 
