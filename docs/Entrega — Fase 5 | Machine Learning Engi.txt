@@ -1,0 +1,16 @@
+Entrega — Fase 5 | Machine Learning Engineering
+
+Repositório GitHub:
+https://github.com/glauberthy/pos_tech_mle_fase_5
+
+Documentação do Projeto:
+A documentação está disponível diretamente no repositório GitHub, incluindo descrição do pipeline completo, variáveis utilizadas, tratamentos realizados e instruções de uso da API e do Dashboard.
+
+API (Swagger/Docs):
+https://glauberthy-passos-magicos-api.hf.space/docs
+
+Dashboard:
+https://glauberthy-passos-magicos-dashboard.hf.space/
+
+Vídeo de Apresentação:
+https://www.youtube.com/watch?v=DMdjvGxEmfg
