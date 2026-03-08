@@ -14,7 +14,7 @@
 <div align="center">
   
   ### 🎬 Vídeo da Apresentação
-  <a href="https://www.youtube.com/watch?v=7AaYYsEG3W4">
+  <a href="https://youtu.be/DMdjvGxEmfg?si=HKW23EbQ1VUYo7az">
     <img src="https://img.shields.io/badge/YouTube-Assistir_Apresentação-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Vídeo da Apresentação">
   </a>
   <br><b>👆 Clique para assistir ao pitch do projeto</b>
