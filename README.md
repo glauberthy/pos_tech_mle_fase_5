@@ -779,6 +779,178 @@ for aluno in data["students"]:
     print(f"  Fatores: {list(zip(aluno['top3_factors'], aluno['top3_values']))}")
 ```
 
+**Exemplo — turma ALFA:**
+
+```json
+{
+  "students": [
+    {
+      "ra": "RA-863",
+      "turma": "ALFA A - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "M",
+      "ano_ingresso": 2023,
+      "ieg": 7.6,
+      "iaa": 0.0,
+      "ips": 3.14,
+      "ipp": 0.0,
+      "matem": 7.0,
+      "portug": 5.5,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-867",
+      "turma": "ALFA A - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "M",
+      "ano_ingresso": 2023,
+      "ieg": 8.6,
+      "iaa": 9.0,
+      "ips": 8.76,
+      "ipp": 0.0,
+      "matem": 8.7,
+      "portug": 9.0,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-868",
+      "turma": "ALFA A - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "M",
+      "ano_ingresso": 2023,
+      "ieg": 9.5,
+      "iaa": 10.0,
+      "ips": 8.76,
+      "ipp": 0.0,
+      "matem": 7.8,
+      "portug": 6.3,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-884",
+      "turma": "ALFA C - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "F",
+      "ano_ingresso": 2023,
+      "ieg": 9.7,
+      "iaa": 9.0,
+      "ips": 4.39,
+      "ipp": 0.0,
+      "matem": 8.4,
+      "portug": 9.2,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-861",
+      "turma": "ALFA A - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "F",
+      "ano_ingresso": 2023,
+      "ieg": 10.0,
+      "iaa": 9.5,
+      "ips": 8.13,
+      "ipp": 0.0,
+      "matem": 9.8,
+      "portug": 9.4,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-862",
+      "turma": "ALFA A - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "M",
+      "ano_ingresso": 2023,
+      "ieg": 9.1,
+      "iaa": 8.5,
+      "ips": 8.14,
+      "ipp": 0.0,
+      "matem": 8.5,
+      "portug": 9.2,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-871",
+      "turma": "ALFA B - G2/G3",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "M",
+      "ano_ingresso": 2023,
+      "ieg": 9.5,
+      "iaa": 9.0,
+      "ips": 3.76,
+      "ipp": 0.0,
+      "matem": 6.8,
+      "portug": 7.0,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-891",
+      "turma": "ALFA C - G0/G1",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "F",
+      "ano_ingresso": 2023,
+      "ieg": 9.5,
+      "iaa": 9.5,
+      "ips": 6.89,
+      "ipp": 0.0,
+      "matem": 6.2,
+      "portug": 8.8,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-894",
+      "turma": "ALFA D - G2/G3",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "F",
+      "ano_ingresso": 2023,
+      "ieg": 9.9,
+      "iaa": 9.5,
+      "ips": 7.52,
+      "ipp": 0.0,
+      "matem": 9.3,
+      "portug": 9.5,
+      "ingles": 0.0,
+      "ano_base": 2023
+    },
+    {
+      "ra": "RA-873",
+      "turma": "ALFA B - G2/G3",
+      "fase": "0",
+      "instituicao": "Pública",
+      "genero": "F",
+      "ano_ingresso": 2023,
+      "ieg": 9.7,
+      "iaa": 8.5,
+      "ips": 7.52,
+      "ipp": 0.0,
+      "matem": 7.2,
+      "portug": 6.8,
+      "ingles": 0.0,
+      "ano_base": 2023
+    }
+  ],
+  "k_pct": 15
+}
+```
+
+> **Nota:** Para alunos da Fase 0 (ALFA), `ingles` é sempre `0.0` — a regra de negócio exclui inglês do cálculo de risco nessa fase.
+
 ---
 
 ### `GET /alert?k_pct=15`
