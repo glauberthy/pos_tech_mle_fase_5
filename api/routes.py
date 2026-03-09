@@ -387,7 +387,7 @@ def predict(request: PredictRequest):
 
     # Score
     t_infer = time.perf_counter()
-    scored = score_students(fe_df, model_dir=MODEL_SUBDIR, lookup_tables=_lookup_tables)
+    scored = score_students(fe_df, model=_model, meta=_meta, model_dir=MODEL_SUBDIR, lookup_tables=_lookup_tables)
     infer_ms = int((time.perf_counter() - t_infer) * 1000)
 
     # Alert

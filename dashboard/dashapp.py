@@ -10,6 +10,7 @@ Ajustes principais vs v3:
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import argparse
 import json
 import os
@@ -17,22 +18,22 @@ import re
 import sys
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import dash_bootstrap_components as dbc
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from dash import Dash, Input, Output, State, dash_table, dcc, html, no_update
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import numpy as np
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from dash import Dash, Input, Output, State, dcc, html, dash_table, no_update
-from datetime import datetime, timezone
-import dash_bootstrap_components as dbc
-
-from dashboard.student_detail import build_student_detail
+print("1) dashapp importado com sucesso", flush=True)
 
 # --------------------------------------------------------------------------------------
 # Paths
@@ -85,26 +86,61 @@ def _safe_jsonl(path: Path, default: list[dict]):
     return rows
 
 
-def _safe_csv(path: Path) -> pd.DataFrame:
+def _csv_signature(path: Path) -> tuple[str, int] | None:
     if not path.exists():
-        return pd.DataFrame()
+        return None
     try:
-        return pd.read_csv(path)
+        return (str(path.resolve()), path.stat().st_mtime_ns)
     except Exception:
+        return None
+
+
+@lru_cache(maxsize=32)
+def _read_csv_cached(path_str: str, mtime_ns: int) -> pd.DataFrame:
+    path = Path(path_str)
+    print(f"2) Tentando ler CSV: {path}", flush=True)
+    try:
+        df = pd.read_csv(path)
+        print(f"4) CSV carregado: {path} | shape={df.shape}", flush=True)
+        return df
+    except Exception as e:
+        print(f"5) Erro ao ler CSV {path}: {e}", flush=True)
         return pd.DataFrame()
 
 
-def _load_scored() -> pd.DataFrame:
-    df = _safe_csv(SCORED_HISTORY_CSV)
-    if df.empty:
-        df = _safe_csv(SCORED_CSV)
+def _safe_csv(path: Path) -> pd.DataFrame:
+    sig = _csv_signature(path)
+    if sig is None:
+        print(f"3) CSV não encontrado: {path}", flush=True)
+        return pd.DataFrame()
+
+    path_str, mtime_ns = sig
+    return _read_csv_cached(path_str, mtime_ns).copy()
+
+
+@lru_cache(maxsize=4)
+def _load_scored_cached(path_str: str, mtime_ns: int) -> pd.DataFrame:
+    df = _read_csv_cached(path_str, mtime_ns).copy()
     if df.empty:
         return df
+
     if "score" in df.columns:
         df["score"] = pd.to_numeric(df["score"], errors="coerce")
     if "ano_base" in df.columns:
         df["ano_base"] = pd.to_numeric(df["ano_base"], errors="coerce").astype("Int64")
+
     return df
+
+
+def _load_scored() -> pd.DataFrame:
+    primary = SCORED_HISTORY_CSV if SCORED_HISTORY_CSV.exists() else SCORED_CSV
+    sig = _csv_signature(primary)
+    if sig is None:
+        print(f"3) CSV scored não encontrado: {primary}", flush=True)
+        return pd.DataFrame()
+
+    path_str, mtime_ns = sig
+    return _load_scored_cached(path_str, mtime_ns).copy()
 
 
 # --------------------------------------------------------------------------------------
@@ -194,7 +230,11 @@ def _view_auc(df: pd.DataFrame) -> float | None:
     fp = np.cumsum(1 - y_sorted)
     tpr = tp / n_pos
     fpr = fp / n_neg
-    auc = float(np.trapezoid(tpr, fpr)) if hasattr(np, "trapezoid") else float(np.sum((fpr[1:] - fpr[:-1]) * (tpr[1:] + tpr[:-1]) * 0.5))
+    auc = (
+        float(np.trapezoid(tpr, fpr))
+        if hasattr(np, "trapezoid")
+        else float(np.sum((fpr[1:] - fpr[:-1]) * (tpr[1:] + tpr[:-1]) * 0.5))
+    )
     return abs(auc)
 
 
@@ -251,7 +291,10 @@ def _fetch_drift_api(api_url: str, mode: str, window: str) -> dict:
         return {}
     try:
         qs = urllib.parse.urlencode({"mode": mode, "window": window})
-        req = urllib.request.Request(f"{api_url.rstrip('/')}/metrics/drift?{qs}", headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(
+            f"{api_url.rstrip('/')}/metrics/drift?{qs}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status == 200:
                 return json.loads(resp.read().decode())
@@ -265,7 +308,10 @@ def _fetch_drift_history(api_url: str, mode: str, window: str, limit: int = 200)
         return []
     try:
         qs = urllib.parse.urlencode({"mode": mode, "window": window, "limit": limit})
-        req = urllib.request.Request(f"{api_url.rstrip('/')}/metrics/drift/history?{qs}", headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(
+            f"{api_url.rstrip('/')}/metrics/drift/history?{qs}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status == 200:
                 data = json.loads(resp.read().decode())
@@ -278,12 +324,14 @@ def _fetch_drift_history(api_url: str, mode: str, window: str, limit: int = 200)
 
 
 def _fetch_logs_api(api_url: str, lines: int = 80) -> dict | None:
-    """Chama GET /metrics/logs na API. Retorna dict com 'content' e 'kpis', ou None se falhar."""
     if not api_url:
         return None
     try:
         qs = urllib.parse.urlencode({"lines": lines})
-        req = urllib.request.Request(f"{api_url.rstrip('/')}/metrics/logs?{qs}", headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(
+            f"{api_url.rstrip('/')}/metrics/logs?{qs}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status == 200:
                 return json.loads(resp.read().decode())
@@ -380,7 +428,6 @@ def kpi_card(title: str, value_id: str, subtitle_id: str | None = None, badge_id
 
 
 def _normalize_status(status: str) -> str:
-    """Padroniza status para apenas 'ok' ou 'critical' (look and feel do print)."""
     s = (status or "").lower().strip()
     if s in ("critical", "high", "danger", "warning", "medium", "warn"):
         return "critical"
@@ -388,7 +435,6 @@ def _normalize_status(status: str) -> str:
 
 
 def _badge_component(status: str):
-    """Badge padrão: 'ok' verde / 'critical' vermelho."""
     s = _normalize_status(status)
     if s == "critical":
         return dbc.Badge("critical", color="danger", className="ms-1")
@@ -446,13 +492,10 @@ def _status_lift(v: float | None) -> str:
 
 
 def _psi_display(v: float | None) -> str:
-    """No print-alvo o PSI aparece como ~19.01 (i.e., 0.1901 * 100).
-    Regra: se 0 <= v <= 1.0, exibe em %*100; senão, exibe bruto.
-    """
     if v is None:
         return "—"
     if 0 <= v <= 1.0:
-        return f"{(v*100):.4f}"
+        return f"{(v * 100):.4f}"
     return f"{v:.4f}"
 
 
@@ -480,9 +523,21 @@ def _filtered_df(df: pd.DataFrame, ano, fases, turmas, ra_query, topk) -> pd.Dat
 # --------------------------------------------------------------------------------------
 def _build_main_layout():
     df = _load_scored()
-    years = sorted(pd.to_numeric(df["ano_base"], errors="coerce").dropna().astype(int).unique().tolist()) if "ano_base" in df.columns else []
-    phases = sorted(df["fase"].dropna().astype(str).unique().tolist(), key=_phase_sort_key) if "fase" in df.columns else []
-    turmas = sorted(df["turma"].dropna().astype(str).unique().tolist()) if "turma" in df.columns else []
+    years = (
+        sorted(pd.to_numeric(df["ano_base"], errors="coerce").dropna().astype(int).unique().tolist())
+        if "ano_base" in df.columns
+        else []
+    )
+    phases = (
+        sorted(df["fase"].dropna().astype(str).unique().tolist(), key=_phase_sort_key)
+        if "fase" in df.columns
+        else []
+    )
+    turmas = (
+        sorted(df["turma"].dropna().astype(str).unique().tolist())
+        if "turma" in df.columns
+        else []
+    )
 
     return dbc.Container(
         fluid=True,
@@ -931,7 +986,7 @@ def _build_main_layout():
                         tab_id="tab-logs",
                         children=[
                             html.Div(className="mt-3"),
-                            dcc.Interval(id="logs-refresh", interval=5000, n_intervals=0),
+                            dcc.Interval(id="logs-refresh", interval=15000, n_intervals=0, disabled=True),
                             dbc.Row(
                                 className="g-3",
                                 children=[
@@ -940,20 +995,23 @@ def _build_main_layout():
                                             dbc.CardBody(
                                                 [
                                                     html.Div("Logging de Monitoramento", className="text-muted mb-2"),
-                                                    html.Div(
-                                                        id="monitoring-log-content",
-                                                        style={
-                                                            "fontFamily": "monospace",
-                                                            "fontSize": 12,
-                                                            "backgroundColor": "#1e1e1e",
-                                                            "color": "#4ec9b0",
-                                                            "padding": "12px",
-                                                            "borderRadius": "6px",
-                                                            "maxHeight": "400px",
-                                                            "overflowY": "auto",
-                                                            "whiteSpace": "pre-wrap",
-                                                        },
-                                                        children="Carregando logs...",
+                                                    dcc.Loading(
+                                                        type="default",
+                                                        children=html.Div(
+                                                            id="monitoring-log-content",
+                                                            style={
+                                                                "fontFamily": "monospace",
+                                                                "fontSize": 12,
+                                                                "backgroundColor": "#1e1e1e",
+                                                                "color": "#4ec9b0",
+                                                                "padding": "12px",
+                                                                "borderRadius": "6px",
+                                                                "maxHeight": "400px",
+                                                                "overflowY": "auto",
+                                                                "whiteSpace": "pre-wrap",
+                                                            },
+                                                            children="Carregando logs...",
+                                                        ),
                                                     ),
                                                 ]
                                             ),
@@ -962,11 +1020,27 @@ def _build_main_layout():
                                         md=12,
                                     ),
                                     dbc.Col(
-                                        dbc.Card(dbc.CardBody([html.Div("Tráfego e erros", className="text-muted"), dcc.Graph(id="requests-errors", config={"displayModeBar": False})]), className="shadow-sm"),
+                                        dbc.Card(
+                                            dbc.CardBody(
+                                                [
+                                                    html.Div("Tráfego e erros", className="text-muted"),
+                                                    dcc.Graph(id="requests-errors", config={"displayModeBar": False}),
+                                                ]
+                                            ),
+                                            className="shadow-sm",
+                                        ),
                                         md=6,
                                     ),
                                     dbc.Col(
-                                        dbc.Card(dbc.CardBody([html.Div("Latência P95", className="text-muted"), dcc.Graph(id="latency-p95", config={"displayModeBar": False})]), className="shadow-sm"),
+                                        dbc.Card(
+                                            dbc.CardBody(
+                                                [
+                                                    html.Div("Latência P95", className="text-muted"),
+                                                    dcc.Graph(id="latency-p95", config={"displayModeBar": False}),
+                                                ]
+                                            ),
+                                            className="shadow-sm",
+                                        ),
                                         md=6,
                                     ),
                                     dbc.Col(
@@ -1029,7 +1103,14 @@ def _build_main_layout():
                             ),
                             dbc.Card(
                                 className="shadow-sm",
-                                children=[dbc.CardBody([html.H5("Checklist de retreino", className="mb-2"), html.Div(id="retrain-checklist", className="small")])],
+                                children=[
+                                    dbc.CardBody(
+                                        [
+                                            html.H5("Checklist de retreino", className="mb-2"),
+                                            html.Div(id="retrain-checklist", className="small"),
+                                        ]
+                                    )
+                                ],
                             ),
                         ],
                     ),
@@ -1042,26 +1123,38 @@ def _build_main_layout():
 
 
 def build_layout():
+    print("6) build_layout() chamado", flush=True)
     return dbc.Container(
         fluid=True,
         children=[
             dcc.Location(id="url", refresh=False),
-            html.Div(id="page-content", children=_build_main_layout()),
+            html.Div(id="page-content"),
             dcc.Download(id="download-report"),
             dcc.Download(id="download-snapshot"),
         ],
     )
 
 
+def serve_layout():
+    print("7) serve_layout() chamado", flush=True)
+    return build_layout()
+
+
 # --------------------------------------------------------------------------------------
 # App
 # --------------------------------------------------------------------------------------
+print("8) Criando app Dash...", flush=True)
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
+print("9) App Dash criado com sucesso", flush=True)
+
+server = app.server
+
 app.title = "Monitoramento Drift × Coerência - Passos Mágicos"
-app.layout = build_layout()
+app.layout = serve_layout
 app.server.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
-# CSS leve para aproximar do print (sem mexer no Bootstrap)
+print("10) Layout lazy configurado", flush=True)
+
 app.index_string = """
 <!DOCTYPE html>
 <html>
@@ -1098,16 +1191,41 @@ def _serve_app(_e):
 # --------------------------------------------------------------------------------------
 @app.callback(Output("page-content", "children"), Input("url", "pathname"))
 def render_page(pathname):
+    print(f"11) render_page chamado | pathname={pathname}", flush=True)
+
     if pathname and pathname.startswith("/aluno/"):
-        ra_raw = pathname.split("/aluno/", 1)[1].strip()
-        ra = ra_raw.replace("%20", " ").strip()
-        df = _load_scored()
-        if df.empty:
-            return dbc.Alert("Dados não encontrados. Execute train.py.", color="warning")
-        dff = _compute_topk_alerts(df.copy(), 15)
-        dff["motivos"] = dff.apply(_reason_text, axis=1)
-        eval_data = _safe_json(EVAL_JSON, {})
-        return build_student_detail(ra, dff, eval_data)
+        try:
+            print("12) Import lazy de build_student_detail", flush=True)
+            from dashboard.student_detail import build_student_detail
+
+            ra_raw = pathname.split("/aluno/", 1)[1].strip()
+            ra = ra_raw.replace("%20", " ").strip()
+
+            print(f"13) Abrindo detalhe do aluno | ra={ra}", flush=True)
+
+            df = _load_scored()
+            if df.empty:
+                print("14) _load_scored retornou vazio", flush=True)
+                return dbc.Alert("Dados não encontrados. Execute train.py.", color="warning")
+
+            dff = _compute_topk_alerts(df.copy(), 15)
+            dff["motivos"] = dff.apply(_reason_text, axis=1)
+            eval_data = _safe_json(EVAL_JSON, {})
+
+            print("15) build_student_detail será chamado", flush=True)
+            return build_student_detail(ra, dff, eval_data)
+
+        except Exception as e:
+            print(f"16) Erro em render_page detalhe aluno: {e}", flush=True)
+            return dbc.Container(
+                fluid=True,
+                children=[
+                    dbc.Alert(f"Erro ao abrir detalhe do aluno: {e}", color="danger"),
+                    dcc.Link("← Voltar para o painel", href="/"),
+                ],
+            )
+
+    print("17) Renderizando main layout", flush=True)
     return _build_main_layout()
 
 
@@ -1128,9 +1246,21 @@ def render_page(pathname):
 )
 def update_topbar(context):
     df = _load_scored()
-    years = sorted(pd.to_numeric(df.get("ano_base", pd.Series(dtype=float)), errors="coerce").dropna().astype(int).unique().tolist()) if not df.empty else []
-    phases = sorted(df.get("fase", pd.Series(dtype=str)).dropna().astype(str).unique().tolist(), key=_phase_sort_key) if not df.empty else []
-    turmas = sorted(df.get("turma", pd.Series(dtype=str)).dropna().astype(str).unique().tolist()) if not df.empty else []
+    years = (
+        sorted(pd.to_numeric(df.get("ano_base", pd.Series(dtype=float)), errors="coerce").dropna().astype(int).unique().tolist())
+        if not df.empty
+        else []
+    )
+    phases = (
+        sorted(df.get("fase", pd.Series(dtype=str)).dropna().astype(str).unique().tolist(), key=_phase_sort_key)
+        if not df.empty
+        else []
+    )
+    turmas = (
+        sorted(df.get("turma", pd.Series(dtype=str)).dropna().astype(str).unique().tolist())
+        if not df.empty
+        else []
+    )
     retrain = _safe_json(RETRAIN_META, {})
     model_ver = retrain.get("model_version", "1.0.0")
     auc = retrain.get("auc", "—")
@@ -1195,17 +1325,37 @@ def update_phase(ano, fases, turmas, topk):
     if dff.empty:
         fig = go.Figure().update_layout(height=280)
         return fig, fig
-    by_phase = dff.groupby("fase", as_index=False).agg(total=("ra", "count"), alertas=("alerta", "sum"), score_medio=("score", "mean"))
+    by_phase = dff.groupby("fase", as_index=False).agg(
+        total=("ra", "count"),
+        alertas=("alerta", "sum"),
+        score_medio=("score", "mean"),
+    )
     by_phase["pct_alerta"] = np.where(by_phase["total"] > 0, 100 * by_phase["alertas"] / by_phase["total"], 0)
-    fig1 = px.bar(by_phase, x="fase", y="pct_alerta", title="% em alerta por fase").update_layout(height=280, margin=dict(t=45, b=10, l=10, r=10))
-    fig2 = px.bar(by_phase, x="fase", y="score_medio", title="Score médio por fase").update_layout(height=280, margin=dict(t=45, b=10, l=10, r=10))
+    fig1 = px.bar(by_phase, x="fase", y="pct_alerta", title="% em alerta por fase").update_layout(
+        height=280, margin=dict(t=45, b=10, l=10, r=10)
+    )
+    fig2 = px.bar(by_phase, x="fase", y="score_medio", title="Score médio por fase").update_layout(
+        height=280, margin=dict(t=45, b=10, l=10, r=10)
+    )
     return fig1, fig2
 
 
 # --------------------------------------------------------------------------------------
 # Logs
 # --------------------------------------------------------------------------------------
-@app.callback(Output("monitoring-log-content", "children"), Input("logs-refresh", "n_intervals"), Input("main-tabs", "active_tab"))
+@app.callback(
+    Output("logs-refresh", "disabled"),
+    Input("main-tabs", "active_tab"),
+)
+def toggle_logs_refresh(active_tab):
+    return active_tab != "tab-logs"
+
+
+@app.callback(
+    Output("monitoring-log-content", "children"),
+    Input("logs-refresh", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
 def update_monitoring_log(_n, active_tab):
     if active_tab != "tab-logs":
         return no_update
@@ -1219,14 +1369,30 @@ def update_monitoring_log(_n, active_tab):
     Input("context-mode", "value"),
     Input("filtro-janela", "value"),
     Input("logs-refresh", "n_intervals"),
+    Input("main-tabs", "active_tab"),
 )
-def update_logs(context, janela, _refresh):
+def update_logs(context, janela, _refresh, active_tab):
+    if active_tab != "tab-logs":
+        return no_update, no_update, no_update
+
     n_requests, n_errors, p95_ms = _parse_monitoring_log_local()
 
     fig_traffic = go.Figure(data=[go.Bar(x=["Requests", "Erros"], y=[n_requests, n_errors])])
-    fig_traffic.update_layout(title=f"Requests: {n_requests} | Erros: {n_errors}", height=200, showlegend=False, margin=dict(t=40, b=10, l=10, r=10))
+    fig_traffic.update_layout(
+        title=f"Requests: {n_requests} | Erros: {n_errors}",
+        height=200,
+        showlegend=False,
+        margin=dict(t=40, b=10, l=10, r=10),
+    )
 
-    fig_latency = go.Figure(go.Indicator(mode="number", value=p95_ms, number={"suffix": " ms", "font": {"size": 48}}, title={"text": "P95 Latência"}))
+    fig_latency = go.Figure(
+        go.Indicator(
+            mode="number",
+            value=p95_ms,
+            number={"suffix": " ms", "font": {"size": 48}},
+            title={"text": "P95 Latência"},
+        )
+    )
     fig_latency.update_layout(height=200, margin=dict(t=25, b=10, l=10, r=10))
 
     drift_mode = "oot" if context == "oot" else "prod"
@@ -1259,7 +1425,6 @@ def update_logs(context, janela, _refresh):
 
 @app.callback(Output("filtro-janela-wrapper", "style"), Input("context-mode", "value"))
 def toggle_janela(context):
-    # Manter componente sempre visível no DOM (evita IndexError em callbacks)
     return {"display": "block"} if context == "prod" else {"display": "block", "opacity": 0.5}
 
 
@@ -1314,17 +1479,32 @@ def generate_report(n_clicks, ano, fases, turmas, topk_alert, k_tradeoff, contex
 
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "filtros": {"ano": ano, "fases": fases, "turmas": turmas, "topk_alert": topk_alert, "k_tradeoff": k_tradeoff, "context": context, "janela": janela},
+        "filtros": {
+            "ano": ano,
+            "fases": fases,
+            "turmas": turmas,
+            "topk_alert": topk_alert,
+            "k_tradeoff": k_tradeoff,
+            "context": context,
+            "janela": janela,
+        },
         "metricas": {
             "psi": float(psi_raw) if psi_raw is not None else None,
             "auc": float(auc_val) if auc_val is not None else None,
             "precision_at_k": float(prec) if prec is not None else None,
             "recall_at_k": float(rec) if rec is not None else None,
         },
-        "resumo": {"n_registros": len(dff), "n_alertas": int(dff["alerta"].sum()) if "alerta" in dff.columns else 0},
+        "resumo": {
+            "n_registros": len(dff),
+            "n_alertas": int(dff["alerta"].sum()) if "alerta" in dff.columns else 0,
+        },
     }
     content = json.dumps(report, indent=2, ensure_ascii=False)
-    return dict(content=content, filename=f"relatorio_drift_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json", type="application/json")
+    return dict(
+        content=content,
+        filename=f"relatorio_drift_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        type="application/json",
+    )
 
 
 @app.callback(
@@ -1344,7 +1524,11 @@ def export_snapshot(n_clicks, ano, fases, turmas, topk_alert):
     dff = _filtered_df(df, ano, fases or [], turmas or [], None, topk_alert)
     if dff.empty:
         return no_update
-    return dcc.send_data_frame(dff.to_csv, f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", index=False)
+    return dcc.send_data_frame(
+        dff.to_csv,
+        f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        index=False,
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -1399,11 +1583,11 @@ def export_snapshot(n_clicks, ano, fases, turmas, topk_alert):
     Input("filtro-ano", "value"),
     Input("filtro-fase", "value"),
     Input("filtro-turma", "value"),
-    Input("filtro-topk", "value"),      # K do alerta (print: 25% no card de cima)
-    Input("k-selector", "value"),       # K do trade-off (print: 15% no box de coerência)
+    Input("filtro-topk", "value"),
+    Input("k-selector", "value"),
     Input("context-mode", "value"),
     Input("filtro-janela", "value"),
-    Input("main-tabs", "active_tab"),   # Reexecuta ao exibir aba Visão Geral
+    Input("main-tabs", "active_tab"),
 )
 def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela, active_tab):
     if active_tab != "tab-overview":
@@ -1416,9 +1600,6 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
     df = _load_scored()
     dff = _filtered_df(df, ano, fases or [], turmas or [], None, topk_alert)
 
-    # -----------------------
-    # 1) PSI (OOT ou PROD)
-    # -----------------------
     psi_raw: float | None = None
     api_url = os.environ.get("API_BASE_URL", "").rstrip("/")
 
@@ -1447,11 +1628,6 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
     psi_str = _psi_display(psi_raw)
     psi_badge = _badge_component(psi_status)
 
-    # -----------------------
-    # 2) Métricas OOT (sempre offline / validação)
-    #   - KPIs rápidos: Precision/Recall usam Top-K (alerta)
-    #   - Painel de coerência: usa K do tradeoff
-    # -----------------------
     auc_val = _view_auc(dff)
 
     prec_alert = _precision_at_topk(dff, topk_alert)
@@ -1478,9 +1654,6 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
     rec_k_badge = _badge_component(_status_recall(rec_k))
     lift_k_badge = _badge_component(_status_lift(lift_k))
 
-    # -----------------------
-    # 3) Matriz Drift × Coerência (como o print: tudo verde, só célula atual rosa)
-    # -----------------------
     has_drift = (psi_raw is not None) and (psi_raw >= 0.10)
     is_coerente = (auc_val is not None and auc_val >= 0.70) and (prec_alert is not None and prec_alert >= 0.65)
 
@@ -1501,18 +1674,29 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
             zmin=0,
             zmax=1,
             colorscale=[[0.0, "#eafff2"], [1.0, "#ffd6d6"]],
-            showscale=True,  # print tem barra 0..1
+            showscale=True,
             colorbar=dict(thickness=12, len=0.75, tickvals=[0, 0.5, 1], ticktext=["0", "0.5", "1"]),
             hovertemplate="Status: %{y} × %{x}<extra></extra>",
         )
     )
-    fig_matriz.add_trace(go.Scatter(x=[x_labels[col]], y=[y_labels[row]], mode="markers", marker=dict(size=18, color="#111827"), hoverinfo="skip", showlegend=False))
-    fig_matriz.update_layout(height=220, margin=dict(t=10, b=10, l=10, r=10), xaxis=dict(tickfont=dict(size=12)), yaxis=dict(tickfont=dict(size=12), autorange="reversed"))
+    fig_matriz.add_trace(
+        go.Scatter(
+            x=[x_labels[col]],
+            y=[y_labels[row]],
+            mode="markers",
+            marker=dict(size=18, color="#111827"),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    fig_matriz.update_layout(
+        height=220,
+        margin=dict(t=10, b=10, l=10, r=10),
+        xaxis=dict(tickfont=dict(size=12)),
+        yaxis=dict(tickfont=dict(size=12), autorange="reversed"),
+    )
     matrix_caption = "Drift (eixo Y) | Coerência (eixo X) — posição atual marcada."
 
-    # -----------------------
-    # 4) PSI trend (histórico)
-    # -----------------------
     drift_mode = "oot" if context == "oot" else "prod"
     window = janela if context == "prod" else "30d"
     events = _get_drift_history(drift_mode, window)
@@ -1540,10 +1724,9 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
                 psi_plot.append(np.nan)
         fig_psi.add_trace(go.Scatter(x=ts_vals, y=psi_plot, mode="lines+markers", name="PSI"))
 
-    # -----------------------
-    # 5) Drift contributors (bins 0..1 em 10 bins)
-    # -----------------------
-    fig_contrib = go.Figure().update_layout(height=220, margin=dict(t=35, b=10, l=10, r=10), title="Contribuição por bin")
+    fig_contrib = go.Figure().update_layout(
+        height=220, margin=dict(t=35, b=10, l=10, r=10), title="Contribuição por bin"
+    )
     contrib_data = []
 
     train_df = _safe_csv(TRAIN_SCORED_CSV)
@@ -1562,19 +1745,23 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
         c_pct = (c_counts + 1e-6) / (c_counts.sum() + 1e-6)
 
         contrib = (c_pct - b_pct) * np.log((c_pct + 1e-10) / (b_pct + 1e-10))
-        contrib = np.maximum(contrib, 0)  # só positivo no visual
+        contrib = np.maximum(contrib, 0)
 
         labels = [f"[{edges[i]:.1f},{edges[i+1]:.1f})" for i in range(10)]
         fig_contrib.add_trace(go.Bar(x=labels, y=contrib.tolist(), name="contrib"))
 
         contrib_rows = []
         for i in range(10):
-            contrib_rows.append({"name": labels[i], "baseline_pct": f"{(b_pct[i]*100):.1f}%", "current_pct": f"{(c_pct[i]*100):.1f}%", "contrib": f"{float(contrib[i]):.2f}"})
+            contrib_rows.append(
+                {
+                    "name": labels[i],
+                    "baseline_pct": f"{(b_pct[i] * 100):.1f}%",
+                    "current_pct": f"{(c_pct[i] * 100):.1f}%",
+                    "contrib": f"{float(contrib[i]):.2f}",
+                }
+            )
         contrib_data = sorted(contrib_rows, key=lambda r: float(r["contrib"]), reverse=True)
 
-    # -----------------------
-    # 6) Qualidade de dados (atualiza com dff filtrado)
-    # -----------------------
     pct_missing = 0.0
     n_outliers = 0
     n_newcats = 0
@@ -1586,15 +1773,13 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
             denom = len(dff) * len(num_cols_list)
             if denom > 0:
                 pct_missing = float(dff[num_cols_list].isna().sum().sum() / denom * 100)
-            # Outliers (IQR): Q1-1.5*IQR ou Q3+1.5*IQR
-            for col in num_cols_list[:20]:  # top 20 cols para performance
+            for col in num_cols_list[:20]:
                 s = pd.to_numeric(dff[col], errors="coerce").dropna()
                 if len(s) >= 4:
                     q1, q3 = s.quantile(0.25), s.quantile(0.75)
                     iqr = q3 - q1
                     if iqr > 0:
                         n_outliers += int(((s < q1 - 1.5 * iqr) | (s > q3 + 1.5 * iqr)).sum())
-        # Categorias novas: valores em cols object que não estavam no train
         train_df = _safe_csv(TRAIN_SCORED_CSV)
         if not train_df.empty:
             for col in dff.select_dtypes(include=["object"]).columns[:5]:
@@ -1612,19 +1797,24 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
     n_num = len(num_cols_list) if not dff.empty else 0
     dq_notes = f"Linhas: {len(dff)} | Cols num: {n_num}"
 
-    # -----------------------
-    # 7) Tradeoff K
-    # -----------------------
     perf_note = "Métricas OOT (validação 2023→2024)."
 
     k_suggestion = ""
     if prec_k is not None and rec_k is not None:
         if rec_k < 0.30:
-            k_suggestion = f"Com K={k_tradeoff}%, Precision≈{prec_k*100:.0f}% e Recall≈{rec_k*100:.0f}%. Para maior cobertura, considere K=20%."
+            k_suggestion = (
+                f"Com K={k_tradeoff}%, Precision≈{prec_k * 100:.0f}% e "
+                f"Recall≈{rec_k * 100:.0f}%. Para maior cobertura, considere K=20%."
+            )
         else:
-            k_suggestion = f"Com K={k_tradeoff}%, Precision≈{prec_k*100:.0f}% e Recall≈{rec_k*100:.0f}%. Bom equilíbrio."
+            k_suggestion = (
+                f"Com K={k_tradeoff}%, Precision≈{prec_k * 100:.0f}% e "
+                f"Recall≈{rec_k * 100:.0f}%. Bom equilíbrio."
+            )
 
-    fig_tradeoff = go.Figure().update_layout(height=250, margin=dict(t=35, b=10, l=10, r=10), title="Trade-off por K (Prec vs Recall)")
+    fig_tradeoff = go.Figure().update_layout(
+        height=250, margin=dict(t=35, b=10, l=10, r=10), title="Trade-off por K (Prec vs Recall)"
+    )
     if not dff.empty and "target" in dff.columns and "score" in dff.columns:
         ks = [10, 15, 20, 25]
         prec_vals, rec_vals = [], []
@@ -1636,10 +1826,13 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
         fig_tradeoff.add_trace(go.Scatter(x=ks, y=prec_vals, mode="lines+markers", name="Precision"))
         fig_tradeoff.add_trace(go.Scatter(x=ks, y=rec_vals, mode="lines+markers", name="Recall"))
 
-    # -----------------------
-    # 8) Calibração
-    # -----------------------
-    fig_cal = go.Figure().update_layout(height=280, margin=dict(t=35, b=10, l=10, r=10), title="Calibração (OOT)", xaxis_title="Score médio predito", yaxis_title="Fração de positivos")
+    fig_cal = go.Figure().update_layout(
+        height=280,
+        margin=dict(t=35, b=10, l=10, r=10),
+        title="Calibração (OOT)",
+        xaxis_title="Score médio predito",
+        yaxis_title="Fração de positivos",
+    )
     cal_table = []
     if not dff.empty and "target" in dff.columns and "score" in dff.columns:
         y = pd.to_numeric(dff["target"], errors="coerce")
@@ -1654,16 +1847,19 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
                 if m.sum() > 0:
                     bucket_mean = float(sv[m].mean())
                     rate_val = float(yv[m].mean())
-                    cal_table.append({"bucket": f"[{bins[i]:.1f}-{bins[i+1]:.1f})", "n": int(m.sum()), "rate": f"{rate_val:.4f}"})
+                    cal_table.append(
+                        {
+                            "bucket": f"[{bins[i]:.1f}-{bins[i+1]:.1f})",
+                            "n": int(m.sum()),
+                            "rate": f"{rate_val:.4f}",
+                        }
+                    )
                     mean_pred_list.append(bucket_mean)
                     mean_true_list.append(rate_val)
             if mean_pred_list:
                 fig_cal.add_trace(go.Scatter(x=mean_pred_list, y=mean_true_list, mode="lines+markers", name="Modelo"))
                 fig_cal.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="Ideal", line=dict(dash="dash")))
 
-    # -----------------------
-    # 9) Ações
-    # -----------------------
     actions = []
     if psi_raw is not None and psi_raw >= 0.20:
         actions.append(html.Li("Drift alto: manter monitoramento e preparar plano de retreino quando houver novos dados."))
@@ -1676,37 +1872,27 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
 
     action_footer = f"Snapshot: {len(dff)} registros | modo={context} | janela={window}"
 
-    # -----------------------
-    # Retorno (status normalizado: ok/critical para look and feel)
-    # -----------------------
     return (
         psi_str, _normalize_status(psi_status), psi_badge,
         auc_str, "OOT (offline)", auc_badge,
         prec_alert_str, f"K={topk_alert}%", prec_alert_badge,
         rec_alert_str, f"K={topk_alert}%", rec_alert_badge,
-
         fig_matriz, matrix_caption,
-
         fig_psi, psi_meta, psi_window,
-
         fig_contrib, contrib_data,
-
         kpi_missing, kpi_missing_sub,
         kpi_newcats, kpi_newcats_sub,
         kpi_outliers, kpi_outliers_sub,
         dq_notes,
-
         auc_str, "OOT", auc_badge,
         prec_k_str, f"K={k_tradeoff}%", prec_k_badge,
         rec_k_str, f"K={k_tradeoff}%", rec_k_badge,
         lift_k_str, f"K={k_tradeoff}%", lift_k_badge,
-
         perf_note,
         k_suggestion,
         fig_tradeoff,
         fig_cal,
         cal_table,
-
         actions,
         action_footer,
     )
@@ -1715,7 +1901,11 @@ def update_overview(ano, fases, turmas, topk_alert, k_tradeoff, context, janela,
 # --------------------------------------------------------------------------------------
 # Retreino tab
 # --------------------------------------------------------------------------------------
-@app.callback(Output("baselines-table", "data"), Output("retrain-checklist", "children"), Input("main-tabs", "active_tab"))
+@app.callback(
+    Output("baselines-table", "data"),
+    Output("retrain-checklist", "children"),
+    Input("main-tabs", "active_tab"),
+)
 def update_retrain_tab(active_tab):
     if active_tab != "tab-retrain":
         return no_update, no_update
@@ -1726,21 +1916,43 @@ def update_retrain_tab(active_tab):
                 mf = d / "baseline_manifest.json"
                 if mf.exists():
                     m = _safe_json(mf, {})
-                    baselines.append({"baseline_id": d.name, "n_students": m.get("n_students", "—"), "created_at": (m.get("created_at") or "—")[:19]})
+                    baselines.append(
+                        {
+                            "baseline_id": d.name,
+                            "n_students": m.get("n_students", "—"),
+                            "created_at": (m.get("created_at") or "—")[:19],
+                        }
+                    )
     ptr = _safe_json(CURRENT_BASELINE_JSON, {})
-    checklist = [html.Li("Baseline atual: " + str(ptr.get("baseline_id", "—"))), html.Li("Modelo carregado: verificar retrain_metadata.json")]
+    checklist = [
+        html.Li("Baseline atual: " + str(ptr.get("baseline_id", "—"))),
+        html.Li("Modelo carregado: verificar retrain_metadata.json"),
+    ]
     return baselines, html.Ul(checklist)
 
 
 # --------------------------------------------------------------------------------------
 # Diagnóstico card
 # --------------------------------------------------------------------------------------
-@app.callback(Output("diag-status-title", "children"), Output("diag-status-text", "children"), Output("diag-rule-text", "children"), Input("filtro-ano", "value"))
+@app.callback(
+    Output("diag-status-title", "children"),
+    Output("diag-status-text", "children"),
+    Output("diag-rule-text", "children"),
+    Input("filtro-ano", "value"),
+)
 def update_diag(ano):
     if ano == 2022:
-        return ("Avaliação In-Sample (Treino)", "Pode apresentar overfitting. Não usar como métrica de produção.", "PSI≥0.1 e métricas OOT ok")
+        return (
+            "Avaliação In-Sample (Treino)",
+            "Pode apresentar overfitting. Não usar como métrica de produção.",
+            "PSI≥0.1 e métricas OOT ok",
+        )
     if ano == 2023:
-        return ("Avaliação OOT (Validação Temporal)", "Métrica válida para decisão de deploy.", "PSI≥0.1 e métricas OOT ok")
+        return (
+            "Avaliação OOT (Validação Temporal)",
+            "Métrica válida para decisão de deploy.",
+            "PSI≥0.1 e métricas OOT ok",
+        )
     return ("Diagnóstico", "Selecione o ano para ver o tipo de avaliação.", "PSI≥0.1 e métricas OOT ok")
 
 
@@ -1756,5 +1968,18 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    port = int(os.environ.get("PORT", 7860))
+
+    print("18) Entrando no __main__", flush=True)
+    print(f"19) ROOT_DIR={ROOT_DIR}", flush=True)
+    print(f"20) PORT={port}", flush=True)
+    print(f"21) SCORED_HISTORY_CSV exists? {SCORED_HISTORY_CSV.exists()}", flush=True)
+    print(f"22) SCORED_CSV exists? {SCORED_CSV.exists()}", flush=True)
+    print(f"23) TRAIN_SCORED_CSV exists? {TRAIN_SCORED_CSV.exists()}", flush=True)
+    print("24) Iniciando Dash embutido...", flush=True)
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+    )
